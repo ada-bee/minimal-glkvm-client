@@ -574,7 +574,9 @@ private struct WindowReferenceSetter: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let w = nsView.window else { return }
         if window !== w {
-            window = w
+            DispatchQueue.main.async {
+                window = w
+            }
         }
     }
 }
@@ -595,9 +597,12 @@ private struct WindowAspectRatioSetter: NSViewRepresentable {
 
         if context.coordinator.didConfigureWindow == false {
             context.coordinator.didConfigureWindow = true
-            window.titlebarAppearsTransparent = false
-            window.styleMask.remove(.fullSizeContentView)
-            context.coordinator.attach(to: window)
+            let coordinator = context.coordinator
+            DispatchQueue.main.async {
+                window.titlebarAppearsTransparent = false
+                window.styleMask.remove(.fullSizeContentView)
+                coordinator.attach(to: window)
+            }
         }
 
         guard let videoSize, videoSize.width > 0, videoSize.height > 0 else {
@@ -633,7 +638,9 @@ private struct WindowAspectRatioSetter: NSViewRepresentable {
                 if desiredLayoutHeight.isFinite, desiredLayoutHeight > 0 {
                     var newFrame = currentFrame
                     newFrame.size.height = desiredLayoutHeight + deltaH
-                    window.setFrame(newFrame, display: true)
+                    DispatchQueue.main.async {
+                        window.setFrame(newFrame, display: true)
+                    }
                 }
             }
         }
@@ -804,11 +811,13 @@ private struct WindowTitleSetter: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let window = nsView.window else { return }
-        if window.title != title {
-            window.title = title
-        }
-        if window.styleMask.contains(.fullScreen) == false {
-            window.titleVisibility = .visible
+        DispatchQueue.main.async {
+            if window.title != title {
+                window.title = title
+            }
+            if window.styleMask.contains(.fullScreen) == false {
+                window.titleVisibility = .visible
+            }
         }
     }
 }

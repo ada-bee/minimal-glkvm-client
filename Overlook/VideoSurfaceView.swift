@@ -264,7 +264,7 @@ struct VideoViewRepresentable: NSViewRepresentable {
         container.onMouseMove = onMouseMove
         container.onMouseButton = onMouseButton
         container.onScrollWheel = onScrollWheel
-        container.embedVideoView(videoView)
+        container.embedVideoViewIfNeeded(videoView)
         return container
     }
 
@@ -272,7 +272,7 @@ struct VideoViewRepresentable: NSViewRepresentable {
         nsView.onMouseMove = onMouseMove
         nsView.onMouseButton = onMouseButton
         nsView.onScrollWheel = onScrollWheel
-        nsView.embedVideoView(videoView)
+        nsView.embedVideoViewIfNeeded(videoView)
     }
 }
 
@@ -283,6 +283,9 @@ final class TrackingContainerView: NSView {
 
     private var trackingAreaRef: NSTrackingArea?
     private var lastMoveTimestamp: TimeInterval = 0
+
+    private weak var embeddedVideoView: RTCMTLNSVideoView?
+    private var embeddedConstraints: [NSLayoutConstraint] = []
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -320,13 +323,28 @@ final class TrackingContainerView: NSView {
         trackingAreaRef = area
     }
 
-    func embedVideoView(_ videoView: RTCMTLNSVideoView) {
-        if videoView.superview !== self {
-            videoView.removeFromSuperview()
-            addSubview(videoView)
+    func embedVideoViewIfNeeded(_ videoView: RTCMTLNSVideoView) {
+        guard embeddedVideoView !== videoView else { return }
+
+        if !embeddedConstraints.isEmpty {
+            NSLayoutConstraint.deactivate(embeddedConstraints)
+            embeddedConstraints.removeAll()
         }
-        videoView.frame = bounds
-        videoView.autoresizingMask = [.width, .height]
+
+        embeddedVideoView?.removeFromSuperview()
+        embeddedVideoView = videoView
+
+        videoView.removeFromSuperview()
+        addSubview(videoView)
+
+        videoView.translatesAutoresizingMaskIntoConstraints = false
+        embeddedConstraints = [
+            videoView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            videoView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            videoView.topAnchor.constraint(equalTo: topAnchor),
+            videoView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(embeddedConstraints)
     }
 
     override func mouseMoved(with event: NSEvent) {
