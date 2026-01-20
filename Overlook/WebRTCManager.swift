@@ -81,6 +81,7 @@ class WebRTCManager: NSObject, ObservableObject {
     @Published var iceCurrentRoundTripTimeMs: Int?
     @Published var audioEnabled = false
     @Published var micEnabled = false
+    @Published var preferLowLatencyPlayout = true
     @Published var isConnecting = false
     @Published var hasEverConnectedToStream = false
     @Published var isStreamStalled = false
@@ -88,6 +89,7 @@ class WebRTCManager: NSObject, ObservableObject {
     @Published var lastVideoFrameAgeSeconds: Int?
     
     private var peerConnection: RTCPeerConnection?
+    private var audioPeerConnection: RTCPeerConnection?
     private var videoTrack: RTCVideoTrack?
     private var localAudioTrack: RTCAudioTrack?
     private var localAudioSender: RTCRtpSender?
@@ -107,6 +109,11 @@ class WebRTCManager: NSObject, ObservableObject {
 
     private var lastInboundVideoBytesReceived: Int64?
     private var lastInboundVideoBytesTimestamp: TimeInterval?
+
+    private var lastJitterBufferDelaySeconds: Double?
+    private var lastJitterBufferEmittedCount: Double?
+
+    private var lastPlayoutHintApplyTime: TimeInterval?
 
     private let audioInputDeviceUIDDefaultsKey = "overlook.audio.inputDeviceUID"
     private let audioOutputDeviceUIDDefaultsKey = "overlook.audio.outputDeviceUID"
@@ -129,6 +136,7 @@ class WebRTCManager: NSObject, ObservableObject {
 
     private var janusSessionId: Int?
     private var janusHandleId: Int?
+    private var janusAudioHandleId: Int?
     private var janusKeepAliveTimer: Timer?
     private var janusWaiters: [String: CheckedContinuation<[String: Any], Error>] = [:]
 
@@ -326,10 +334,22 @@ class WebRTCManager: NSObject, ObservableObject {
                 delegate: self
             )
 
+            if audioEnabled || micEnabled {
+                let audioConstraints = RTCMediaConstraints(
+                    mandatoryConstraints: nil,
+                    optionalConstraints: ["OfferToReceiveAudio": "true", "OfferToReceiveVideo": "false"]
+                )
+                audioPeerConnection = factory.peerConnection(
+                    with: configuration,
+                    constraints: audioConstraints,
+                    delegate: self
+                )
+            }
+
             if micEnabled {
                 let granted = await ensureMicrophoneAccess()
                 if granted {
-                    setupLocalMicrophoneTrackIfNeeded(factory: factory)
+                    setupLocalMicrophoneTrackIfNeeded(factory: factory, peerConnection: audioPeerConnection ?? peerConnection)
                 }
             }
             
@@ -381,6 +401,21 @@ class WebRTCManager: NSObject, ObservableObject {
             configuration: dataChannelConfig
         )
         dataChannel?.delegate = self
+    }
+
+    func setPreferLowLatencyPlayout(_ enabled: Bool) {
+        preferLowLatencyPlayout = enabled
+        applyPlayoutDelayHintIfPossible()
+    }
+
+    private func applyPlayoutDelayHintIfPossible() {
+        guard let peerConnection else { return }
+        guard preferLowLatencyPlayout else { return }
+        for receiver in peerConnection.receivers {
+            guard let kind = receiver.track?.kind else { continue }
+            guard kind == "video" || kind == "audio" else { continue }
+            WebRTCFactoryBuilder.setPlayoutDelayHintIfSupportedFor(receiver, seconds: 0.0)
+        }
     }
     
     private func connectToSignalingServer(device: KVMDevice) async throws {
@@ -440,7 +475,7 @@ class WebRTCManager: NSObject, ObservableObject {
         }
         janusHandleId = handleId
 
-        // Request to start watching video stream
+        // Video handle always requests video-only to avoid A/V sync causing video buffering.
         let watchTransaction = makeJanusTransaction()
         try await sendJanusMessage([
             "janus": "message",
@@ -448,9 +483,9 @@ class WebRTCManager: NSObject, ObservableObject {
                 "request": "watch",
                 "params": [
                     "orientation": 0,
-                    "audio": audioEnabled,
+                    "audio": false,
                     "video": true,
-                    "mic": micEnabled,
+                    "mic": false,
                     "camera": false,
                 ],
             ],
@@ -458,6 +493,44 @@ class WebRTCManager: NSObject, ObservableObject {
             "session_id": sessionId,
             "handle_id": handleId,
         ])
+
+        if (audioEnabled || micEnabled), let audioPeerConnection {
+            let audioAttachTransaction = makeJanusTransaction()
+            try await sendJanusMessage([
+                "janus": "attach",
+                "plugin": "janus.plugin.ustreamer",
+                "opaque_id": "oid-audio-\(UUID().uuidString)",
+                "transaction": audioAttachTransaction,
+                "session_id": sessionId,
+            ])
+
+            let audioAttachResponse = try await waitForJanusTransaction(audioAttachTransaction)
+            guard let audioAttachData = audioAttachResponse["data"] as? [String: Any],
+                  let audioHandleId = audioAttachData["id"] as? Int else {
+                throw WebRTCError.signalingConnectionLost
+            }
+            janusAudioHandleId = audioHandleId
+
+            let audioWatchTransaction = makeJanusTransaction()
+            try await sendJanusMessage([
+                "janus": "message",
+                "body": [
+                    "request": "watch",
+                    "params": [
+                        "orientation": 0,
+                        "audio": audioEnabled,
+                        "video": false,
+                        "mic": micEnabled,
+                        "camera": false,
+                    ],
+                ],
+                "transaction": audioWatchTransaction,
+                "session_id": sessionId,
+                "handle_id": audioHandleId,
+            ])
+
+            _ = audioPeerConnection
+        }
 
         startJanusKeepAlive()
     }
@@ -485,9 +558,8 @@ class WebRTCManager: NSObject, ObservableObject {
         ])
     }
 
-    private func sendJanusTrickleCandidate(_ candidate: RTCIceCandidate) async throws {
-        guard let sessionId = janusSessionId,
-              let handleId = janusHandleId else {
+    private func sendJanusTrickleCandidate(_ candidate: RTCIceCandidate, handleId: Int) async throws {
+        guard let sessionId = janusSessionId else {
             return
         }
 
@@ -504,9 +576,8 @@ class WebRTCManager: NSObject, ObservableObject {
         ])
     }
 
-    private func sendJanusTrickleCompleted() async throws {
-        guard let sessionId = janusSessionId,
-              let handleId = janusHandleId else {
+    private func sendJanusTrickleCompleted(handleId: Int) async throws {
+        guard let sessionId = janusSessionId else {
             return
         }
 
@@ -603,8 +674,16 @@ class WebRTCManager: NSObject, ObservableObject {
         if janusType == "trickle" {
             guard let candidateObj = message["candidate"] as? [String: Any],
                   let candidateString = candidateObj["candidate"] as? String,
-                  let peerConnection = peerConnection else {
+                  let videoPeerConnection = peerConnection else {
                 return
+            }
+
+            let senderHandleId = message["sender"] as? Int
+            let peerConnection: RTCPeerConnection
+            if let senderHandleId, senderHandleId == janusAudioHandleId, let audioPeerConnection {
+                peerConnection = audioPeerConnection
+            } else {
+                peerConnection = videoPeerConnection
             }
 
             if (candidateObj["completed"] as? Bool) == true {
@@ -627,6 +706,7 @@ class WebRTCManager: NSObject, ObservableObject {
 
         if janusType != "event" { return }
 
+        let senderHandleId = message["sender"] as? Int
         guard let jsep = message["jsep"] as? [String: Any],
               let jsepType = jsep["type"] as? String,
               jsepType == "offer",
@@ -634,11 +714,23 @@ class WebRTCManager: NSObject, ObservableObject {
             return
         }
 
-        await handleOfferSDP(sdpString)
+        await handleOfferSDP(sdpString, senderHandleId: senderHandleId)
     }
     
-    private func handleOfferSDP(_ sdpString: String) async {
-        guard let peerConnection = peerConnection else { return }
+    private func handleOfferSDP(_ sdpString: String, senderHandleId: Int?) async {
+        guard let videoHandleId = janusHandleId else { return }
+
+        let peerConnection: RTCPeerConnection?
+        let handleId: Int?
+        if let senderHandleId, senderHandleId == janusAudioHandleId {
+            peerConnection = audioPeerConnection
+            handleId = janusAudioHandleId
+        } else {
+            peerConnection = self.peerConnection
+            handleId = videoHandleId
+        }
+
+        guard let peerConnection, let handleId else { return }
         
         let sessionDescription = RTCSessionDescription(
             type: .offer,
@@ -652,11 +744,10 @@ class WebRTCManager: NSObject, ObservableObject {
         }
         
         // Create and send answer
-        await createAndSendAnswer()
+        await createAndSendAnswer(peerConnection: peerConnection, handleId: handleId)
     }
-    
-    private func createAndSendAnswer() async {
-        guard let peerConnection = peerConnection else { return }
+
+    private func createAndSendAnswer(peerConnection: RTCPeerConnection, handleId: Int) async {
 
         do {
             let sessionDescription = try await peerConnection.answer(
@@ -670,8 +761,7 @@ class WebRTCManager: NSObject, ObservableObject {
         
         // Send answer to Janus
         guard let localDescription = peerConnection.localDescription,
-              let sessionId = janusSessionId,
-              let handleId = janusHandleId else {
+              let sessionId = janusSessionId else {
             return
         }
 
@@ -761,6 +851,14 @@ class WebRTCManager: NSObject, ObservableObject {
                 iceCurrentRoundTripTimeMs = nil
             }
             return
+        }
+
+        if preferLowLatencyPlayout {
+            let now = Date().timeIntervalSince1970
+            if lastPlayoutHintApplyTime == nil || (now - (lastPlayoutHintApplyTime ?? 0)) > 2.0 {
+                applyPlayoutDelayHintIfPossible()
+                lastPlayoutHintApplyTime = now
+            }
         }
 
         let lastBytes = lastInboundVideoBytesReceived
@@ -856,14 +954,24 @@ class WebRTCManager: NSObject, ObservableObject {
             jitterMs = nil
         }
 
-        let playoutDelayMs: Int?
-        if let jitterBufferDelaySeconds,
-           let jitterBufferEmittedCount,
-           jitterBufferEmittedCount > 0 {
-            playoutDelayMs = Int(((jitterBufferDelaySeconds / jitterBufferEmittedCount) * 1000.0).rounded())
-        } else {
-            playoutDelayMs = nil
-        }
+        let playoutDelayMs: Int? = {
+            guard let jitterBufferDelaySeconds,
+                  let jitterBufferEmittedCount,
+                  jitterBufferEmittedCount > 0 else {
+                return nil
+            }
+
+            if let lastDelay = lastJitterBufferDelaySeconds,
+               let lastEmitted = lastJitterBufferEmittedCount {
+                let dDelay = jitterBufferDelaySeconds - lastDelay
+                let dEmit = jitterBufferEmittedCount - lastEmitted
+                if dDelay >= 0, dEmit > 0 {
+                    return Int(((dDelay / dEmit) * 1000.0).rounded())
+                }
+            }
+
+            return Int(((jitterBufferDelaySeconds / jitterBufferEmittedCount) * 1000.0).rounded())
+        }()
 
         let decodeMs: Int?
         if let totalDecodeTimeSeconds,
@@ -884,6 +992,8 @@ class WebRTCManager: NSObject, ObservableObject {
         await MainActor.run {
             self.lastInboundVideoBytesReceived = bytesReceived
             self.lastInboundVideoBytesTimestamp = now
+            self.lastJitterBufferDelaySeconds = jitterBufferDelaySeconds
+            self.lastJitterBufferEmittedCount = jitterBufferEmittedCount
             self.inboundVideoKbps = kbps
             self.inboundVideoPlayoutDelayMs = playoutDelayMs
             self.inboundVideoJitterMs = jitterMs
@@ -929,6 +1039,7 @@ class WebRTCManager: NSObject, ObservableObject {
         janusKeepAliveTimer = nil
         janusSessionId = nil
         janusHandleId = nil
+        janusAudioHandleId = nil
         let waiters = janusWaiters
         janusWaiters.removeAll()
         for (_, waiter) in waiters {
@@ -943,6 +1054,9 @@ class WebRTCManager: NSObject, ObservableObject {
         
         peerConnection?.close()
         peerConnection = nil
+
+        audioPeerConnection?.close()
+        audioPeerConnection = nil
 
         localAudioSender = nil
         localAudioTrack = nil
@@ -992,7 +1106,7 @@ class WebRTCManager: NSObject, ObservableObject {
 #endif
     }
 
-    private func setupLocalMicrophoneTrackIfNeeded(factory: RTCPeerConnectionFactory) {
+    private func setupLocalMicrophoneTrackIfNeeded(factory: RTCPeerConnectionFactory, peerConnection: RTCPeerConnection?) {
         guard localAudioTrack == nil else { return }
         guard let peerConnection else { return }
 
@@ -1031,6 +1145,13 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCIceConnectionState) {
         Task { @MainActor in
+            // Drive UI connection state from the video peer connection only.
+            // Audio may connect/disconnect independently when split into a separate PeerConnection.
+            guard peerConnection === self.peerConnection else {
+                print("(audio) ICE connection state changed: \(stateChanged)")
+                return
+            }
+
             isConnected = (stateChanged == .connected || stateChanged == .completed)
             if isConnected {
                 isConnecting = false
@@ -1059,7 +1180,15 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
 
             if stateChanged == .complete {
                 do {
-                    try await sendJanusTrickleCompleted()
+                    if peerConnection === self.audioPeerConnection {
+                        if let handleId = self.janusAudioHandleId {
+                            try await sendJanusTrickleCompleted(handleId: handleId)
+                        }
+                    } else {
+                        if let handleId = self.janusHandleId {
+                            try await sendJanusTrickleCompleted(handleId: handleId)
+                        }
+                    }
                 } catch {
                     // ignore
                 }
@@ -1070,7 +1199,15 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         Task { @MainActor in
             do {
-                try await sendJanusTrickleCandidate(candidate)
+                if peerConnection === self.audioPeerConnection {
+                    if let handleId = self.janusAudioHandleId {
+                        try await sendJanusTrickleCandidate(candidate, handleId: handleId)
+                    }
+                } else {
+                    if let handleId = self.janusHandleId {
+                        try await sendJanusTrickleCandidate(candidate, handleId: handleId)
+                    }
+                }
             } catch {
                 print("Failed to send Janus ICE candidate: \(error)")
             }
@@ -1090,6 +1227,7 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
+        applyPlayoutDelayHintIfPossible()
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         videoTrack = track
         if let videoView {

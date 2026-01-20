@@ -228,14 +228,18 @@ struct WebUISettingsPanel: View {
                 VStack(alignment: .leading, spacing: 14) {
                     DisclosureGroup("Video", isExpanded: $isVideoExpanded) {
                         VStack(alignment: .leading, spacing: 10) {
-                            Picker("Mode", selection: bindingString(
+                            let modeBinding = bindingString(
                                 get: { $0.videoProcessing },
                                 set: { $0.videoProcessing = $1 },
                                 defaultValue: "low_latency_first"
-                            )) {
+                            )
+                            Picker("Mode", selection: modeBinding) {
                                 ForEach(processingOptions, id: \.0) { value, label in
                                     Text(label).tag(value)
                                 }
+                            }
+                            .onChange(of: modeBinding.wrappedValue) { _, newValue in
+                                webRTCManager.setPreferLowLatencyPlayout(newValue == "low_latency_first")
                             }
 
                             Picker("Quality", selection: $selectedVideoQualityPreset) {
@@ -872,6 +876,7 @@ struct WebUISettingsPanel: View {
             let edidValue = try await client.getEDID()
             await MainActor.run {
                 self.config = config
+                webRTCManager.setPreferLowLatencyPlayout(config.videoProcessing == "low_latency_first")
                 self.keymaps = km
                 self.streamerState = st
                 self.currentEdid = edidValue
