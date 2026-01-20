@@ -79,6 +79,11 @@ class WebRTCManager: NSObject, ObservableObject {
     @Published var inboundVideoDecodeMs: Int?
     @Published var inboundVideoPacketsLost: Int?
     @Published var iceCurrentRoundTripTimeMs: Int?
+    @Published var inboundAudioKbps: Int?
+    @Published var inboundAudioPlayoutDelayMs: Int?
+    @Published var inboundAudioJitterMs: Int?
+    @Published var inboundAudioPacketsLost: Int?
+    @Published var audioIceCurrentRoundTripTimeMs: Int?
     @Published var audioEnabled = false
     @Published var micEnabled = false
     @Published var preferLowLatencyPlayout = true
@@ -110,8 +115,14 @@ class WebRTCManager: NSObject, ObservableObject {
     private var lastInboundVideoBytesReceived: Int64?
     private var lastInboundVideoBytesTimestamp: TimeInterval?
 
+    private var lastInboundAudioBytesReceived: Int64?
+    private var lastInboundAudioBytesTimestamp: TimeInterval?
+
     private var lastJitterBufferDelaySeconds: Double?
     private var lastJitterBufferEmittedCount: Double?
+
+    private var lastAudioJitterBufferDelaySeconds: Double?
+    private var lastAudioJitterBufferEmittedCount: Double?
 
     private var lastPlayoutHintApplyTime: TimeInterval?
 
@@ -849,6 +860,11 @@ class WebRTCManager: NSObject, ObservableObject {
                 inboundVideoDecodeMs = nil
                 inboundVideoPacketsLost = nil
                 iceCurrentRoundTripTimeMs = nil
+                inboundAudioKbps = nil
+                inboundAudioPlayoutDelayMs = nil
+                inboundAudioJitterMs = nil
+                inboundAudioPacketsLost = nil
+                audioIceCurrentRoundTripTimeMs = nil
             }
             return
         }
@@ -1001,6 +1017,144 @@ class WebRTCManager: NSObject, ObservableObject {
             self.inboundVideoPacketsLost = packetsLost
             self.iceCurrentRoundTripTimeMs = rttMs
         }
+
+        guard let audioPeerConnection else {
+            await MainActor.run {
+                self.lastInboundAudioBytesReceived = nil
+                self.lastInboundAudioBytesTimestamp = nil
+                self.lastAudioJitterBufferDelaySeconds = nil
+                self.lastAudioJitterBufferEmittedCount = nil
+                self.inboundAudioKbps = nil
+                self.inboundAudioPlayoutDelayMs = nil
+                self.inboundAudioJitterMs = nil
+                self.inboundAudioPacketsLost = nil
+                self.audioIceCurrentRoundTripTimeMs = nil
+            }
+            return
+        }
+
+        let lastAudioBytes = lastInboundAudioBytesReceived
+        let lastAudioTs = lastInboundAudioBytesTimestamp
+
+        let audioReport = await audioPeerConnection.statistics()
+        func audioNumberValue(_ any: Any?) -> NSNumber? {
+            any as? NSNumber
+        }
+
+        var audioBytesReceived: Int64?
+        var audioJitterSeconds: Double?
+        var audioJitterBufferDelaySeconds: Double?
+        var audioJitterBufferEmittedCount: Double?
+        var audioPacketsLost: Int?
+        var audioCurrentRoundTripTimeSeconds: Double?
+
+        for statistic in audioReport.statistics.values {
+            if statistic.type == "candidate-pair" {
+                let selected = (statistic.values["selected"] as? Bool)
+                    ?? (audioNumberValue(statistic.values["selected"])?.boolValue)
+                    ?? false
+                guard selected else { continue }
+
+                if let rtt = audioNumberValue(statistic.values["currentRoundTripTime"])?.doubleValue {
+                    audioCurrentRoundTripTimeSeconds = rtt
+                }
+                continue
+            }
+
+            guard statistic.type == "inbound-rtp" else { continue }
+
+            if let kind = statistic.values["kind"] as? String, kind != "audio" { continue }
+            if let mediaType = statistic.values["mediaType"] as? String, mediaType != "audio" { continue }
+
+            if let n = audioNumberValue(statistic.values["bytesReceived"]) {
+                audioBytesReceived = n.int64Value
+            }
+            if let n = audioNumberValue(statistic.values["jitter"]) {
+                audioJitterSeconds = n.doubleValue
+            }
+            if let n = audioNumberValue(statistic.values["jitterBufferDelay"]) {
+                audioJitterBufferDelaySeconds = n.doubleValue
+            }
+            if let n = audioNumberValue(statistic.values["jitterBufferEmittedCount"]) {
+                audioJitterBufferEmittedCount = n.doubleValue
+            }
+            if let n = audioNumberValue(statistic.values["packetsLost"]) {
+                audioPacketsLost = n.intValue
+            }
+
+            break
+        }
+
+        let audioNow = Date().timeIntervalSince1970
+
+        guard let audioBytesReceived else {
+            await MainActor.run {
+                self.lastInboundAudioBytesReceived = nil
+                self.lastInboundAudioBytesTimestamp = nil
+                self.lastAudioJitterBufferDelaySeconds = nil
+                self.lastAudioJitterBufferEmittedCount = nil
+                self.inboundAudioKbps = nil
+                self.inboundAudioPlayoutDelayMs = nil
+                self.inboundAudioJitterMs = nil
+                self.inboundAudioPacketsLost = nil
+                self.audioIceCurrentRoundTripTimeMs = nil
+            }
+            return
+        }
+
+        var audioKbps: Int?
+        if let lastAudioBytes, let lastAudioTs {
+            let dt = audioNow - lastAudioTs
+            let db = Double(audioBytesReceived - lastAudioBytes)
+            if dt > 0, db >= 0 {
+                audioKbps = Int((db * 8.0 / dt) / 1000.0)
+            }
+        }
+
+        let audioJitterMs: Int?
+        if let audioJitterSeconds {
+            audioJitterMs = Int((audioJitterSeconds * 1000.0).rounded())
+        } else {
+            audioJitterMs = nil
+        }
+
+        let audioPlayoutDelayMs: Int? = {
+            guard let audioJitterBufferDelaySeconds,
+                  let audioJitterBufferEmittedCount,
+                  audioJitterBufferEmittedCount > 0 else {
+                return nil
+            }
+
+            if let lastDelay = lastAudioJitterBufferDelaySeconds,
+               let lastEmitted = lastAudioJitterBufferEmittedCount {
+                let dDelay = audioJitterBufferDelaySeconds - lastDelay
+                let dEmit = audioJitterBufferEmittedCount - lastEmitted
+                if dDelay >= 0, dEmit > 0 {
+                    return Int(((dDelay / dEmit) * 1000.0).rounded())
+                }
+            }
+
+            return Int(((audioJitterBufferDelaySeconds / audioJitterBufferEmittedCount) * 1000.0).rounded())
+        }()
+
+        let audioRttMs: Int?
+        if let audioCurrentRoundTripTimeSeconds {
+            audioRttMs = Int((audioCurrentRoundTripTimeSeconds * 1000.0).rounded())
+        } else {
+            audioRttMs = nil
+        }
+
+        await MainActor.run {
+            self.lastInboundAudioBytesReceived = audioBytesReceived
+            self.lastInboundAudioBytesTimestamp = audioNow
+            self.lastAudioJitterBufferDelaySeconds = audioJitterBufferDelaySeconds
+            self.lastAudioJitterBufferEmittedCount = audioJitterBufferEmittedCount
+            self.inboundAudioKbps = audioKbps
+            self.inboundAudioPlayoutDelayMs = audioPlayoutDelayMs
+            self.inboundAudioJitterMs = audioJitterMs
+            self.inboundAudioPacketsLost = audioPacketsLost
+            self.audioIceCurrentRoundTripTimeMs = audioRttMs
+        }
     }
     
     private func measureLatency() async {
@@ -1080,8 +1234,17 @@ class WebRTCManager: NSObject, ObservableObject {
         inboundVideoDecodeMs = nil
         inboundVideoPacketsLost = nil
         iceCurrentRoundTripTimeMs = nil
+        inboundAudioKbps = nil
+        inboundAudioPlayoutDelayMs = nil
+        inboundAudioJitterMs = nil
+        inboundAudioPacketsLost = nil
+        audioIceCurrentRoundTripTimeMs = nil
         lastInboundVideoBytesReceived = nil
         lastInboundVideoBytesTimestamp = nil
+        lastInboundAudioBytesReceived = nil
+        lastInboundAudioBytesTimestamp = nil
+        lastAudioJitterBufferDelaySeconds = nil
+        lastAudioJitterBufferEmittedCount = nil
         fpsWindowStartTime = 0
         fpsFrameCount = 0
         lastFpsPublishTime = 0

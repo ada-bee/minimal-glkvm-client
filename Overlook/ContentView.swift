@@ -238,6 +238,11 @@ struct ContentView: View {
                     inboundVideoDecodeMs: webRTCManager.inboundVideoDecodeMs,
                     inboundVideoPacketsLost: webRTCManager.inboundVideoPacketsLost,
                     iceCurrentRoundTripTimeMs: webRTCManager.iceCurrentRoundTripTimeMs,
+                    inboundAudioKbps: webRTCManager.inboundAudioKbps,
+                    inboundAudioPlayoutDelayMs: webRTCManager.inboundAudioPlayoutDelayMs,
+                    inboundAudioJitterMs: webRTCManager.inboundAudioJitterMs,
+                    inboundAudioPacketsLost: webRTCManager.inboundAudioPacketsLost,
+                    audioIceCurrentRoundTripTimeMs: webRTCManager.audioIceCurrentRoundTripTimeMs,
                     onScan: {
                         kvmDeviceManager.scanForDevices()
                     },
@@ -839,6 +844,12 @@ struct ConnectionsPopoverView: View {
     let inboundVideoPacketsLost: Int?
     let iceCurrentRoundTripTimeMs: Int?
 
+    let inboundAudioKbps: Int?
+    let inboundAudioPlayoutDelayMs: Int?
+    let inboundAudioJitterMs: Int?
+    let inboundAudioPacketsLost: Int?
+    let audioIceCurrentRoundTripTimeMs: Int?
+
     let onScan: () -> Void
     let onManualConnect: () -> Void
     let onToggleConnection: () -> Void
@@ -857,6 +868,12 @@ struct ConnectionsPopoverView: View {
         let decodeText = inboundVideoDecodeMs.map { "\($0) ms" } ?? "—"
         let lossText = inboundVideoPacketsLost.map { String($0) } ?? "—"
         let rttText = iceCurrentRoundTripTimeMs.map { "\($0) ms" } ?? "—"
+
+        let audioKbpsText = inboundAudioKbps.map { "\($0) kbps" } ?? "— kbps"
+        let audioPlayoutDelayText = inboundAudioPlayoutDelayMs.map { "\($0) ms" } ?? "—"
+        let audioJitterText = inboundAudioJitterMs.map { "\($0) ms" } ?? "—"
+        let audioLossText = inboundAudioPacketsLost.map { String($0) } ?? "—"
+        let audioRttText = audioIceCurrentRoundTripTimeMs.map { "\($0) ms" } ?? "—"
 
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -971,6 +988,53 @@ struct ConnectionsPopoverView: View {
                     Text(rttText)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+
+                if inboundAudioKbps != nil || inboundAudioJitterMs != nil || inboundAudioPacketsLost != nil || audioIceCurrentRoundTripTimeMs != nil {
+                    HStack {
+                        Text("Audio")
+                            .font(.caption)
+                        Spacer()
+                        Text(audioKbpsText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Audio Playout")
+                            .font(.caption)
+                        Spacer()
+                        Text(audioPlayoutDelayText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Audio Jitter")
+                            .font(.caption)
+                        Spacer()
+                        Text(audioJitterText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Audio Lost")
+                            .font(.caption)
+                        Spacer()
+                        Text(audioLossText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Audio ICE RTT")
+                            .font(.caption)
+                        Spacer()
+                        Text(audioRttText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
