@@ -1,8 +1,5 @@
 import SwiftUI
 import AppKit
-#if canImport(CoreVideo)
-import CoreVideo
-#endif
 #if canImport(WebRTC)
 import WebRTC
 #endif
@@ -63,12 +60,6 @@ struct VideoSurfaceView: View {
                                 .foregroundColor(.secondary)
                         }
 
-                        if let age = webRTCManager.lastVideoFrameAgeSeconds, webRTCManager.isConnecting == false {
-                            Text("Last video frame: \(age)s ago")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
                         Button("Reconnect") {
                             onReconnect()
                         }
@@ -86,19 +77,10 @@ struct VideoSurfaceView: View {
     }
 
     private func currentVideoSize() -> CGSize? {
-        if let size = webRTCManager.videoSize, size.width > 0, size.height > 0 {
-            return size
-        }
-
-        guard let pixelBuffer = webRTCManager.currentFrame else {
+        guard let size = webRTCManager.videoSize, size.width > 0, size.height > 0 else {
             return nil
         }
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        if width <= 0 || height <= 0 {
-            return nil
-        }
-        return CGSize(width: width, height: height)
+        return size
     }
 }
 

@@ -1,17 +1,13 @@
 import Foundation
 import Cocoa
 import CoreGraphics
-import Combine
 import SwiftUI
 
 @MainActor
-class InputManager: ObservableObject {
-    private var webRTCManager: WebRTCManager?
+final class InputManager: ObservableObject {
     private var glkvmClient: GLKVMClient?
     private var glkvmWebSocketClient: GLKVMClient.WebSocketClient?
     private var keyEventMonitor: Any?
-    private var mouseEventMonitor: Any?
-    private var isCapturing = false
 
     private struct PendingAbsoluteMouseMove {
         let toX: Int
@@ -25,19 +21,12 @@ class InputManager: ObservableObject {
     private var pendingCommandKeyCode: UInt16?
     private var activeCommandKeyCode: UInt16?
     private var commandKeySentToRemote: Bool = false
-    
+
     @Published var isKeyboardCaptureEnabled = false
     @Published var isMouseCaptureEnabled = false
 
-    enum TransportMode: String, CaseIterable {
-        case webRTC
-        case glkvmWebSocket
-    }
-
-    @Published var transportMode: TransportMode = .glkvmWebSocket
-    
     func setup(with webRTCManager: WebRTCManager) {
-        self.webRTCManager = webRTCManager
+        _ = webRTCManager
     }
 
     func setGLKVMClient(_ client: GLKVMClient?) {
@@ -46,6 +35,7 @@ class InputManager: ObservableObject {
             disconnectGLKVMWebSocket()
             return
         }
+
         Task { [weak self] in
             await self?.reconnectGLKVMWebSocketIfNeeded()
         }
@@ -54,17 +44,7 @@ class InputManager: ObservableObject {
     func handleVideoMouseMove(pointInView: CGPoint, viewSize: CGSize, videoSize: CGSize?) {
         guard isMouseCaptureEnabled else { return }
         let normalized = normalizePointInViewToVideo(pointInView: pointInView, viewSize: viewSize, videoSize: videoSize)
-        let moveEvent = MouseMoveEvent(position: normalized, timestamp: CACurrentMediaTime())
-        if transportMode == .glkvmWebSocket {
-            enqueueMouseMoveEvent(moveEvent)
-        } else {
-            sendMouseMoveEvent(moveEvent)
-        }
-    }
-
-    private func enqueueMouseMoveEvent(_ event: MouseMoveEvent) {
-        guard isNormalized(event.position) else { return }
-        let (toX, toY) = glkvmAbsolutePoint(fromNormalized: event.position)
+        let (toX, toY) = glkvmAbsolutePoint(fromNormalized: normalized)
         pendingMouseMove = PendingAbsoluteMouseMove(toX: toX, toY: toY)
         if mouseMoveSenderTask == nil {
             startMouseMoveSender()
@@ -80,10 +60,10 @@ class InputManager: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
 
-                let snapshot: (move: PendingAbsoluteMouseMove?, mode: TransportMode, ws: GLKVMClient.WebSocketClient?) = await MainActor.run {
-                    let e = self.pendingMouseMove
+                let snapshot: (move: PendingAbsoluteMouseMove?, ws: GLKVMClient.WebSocketClient?) = await MainActor.run {
+                    let event = self.pendingMouseMove
                     self.pendingMouseMove = nil
-                    return (e, self.transportMode, self.glkvmWebSocketClient)
+                    return (event, self.glkvmWebSocketClient)
                 }
 
                 guard let move = snapshot.move else {
@@ -93,7 +73,7 @@ class InputManager: ObservableObject {
                     return
                 }
 
-                if snapshot.mode == .glkvmWebSocket, let ws = snapshot.ws {
+                if let ws = snapshot.ws {
                     try? await ws.sendHidMouseMove(toX: move.toX, toY: move.toY)
                 }
 
@@ -111,26 +91,24 @@ class InputManager: ObservableObject {
     func handleVideoMouseButton(button: MouseButton, isDown: Bool, pointInView: CGPoint, viewSize: CGSize, videoSize: CGSize?) {
         guard isMouseCaptureEnabled else { return }
         let normalized = normalizePointInViewToVideo(pointInView: pointInView, viewSize: viewSize, videoSize: videoSize)
-        let buttonEvent = MouseButtonEvent(button: button, isDown: isDown, position: normalized, timestamp: CACurrentMediaTime())
-        sendMouseButtonEvent(buttonEvent)
+        let (toX, toY) = glkvmAbsolutePoint(fromNormalized: normalized)
+        guard let buttonName = glkvmMouseButtonName(button), let ws = glkvmWebSocketClient else { return }
+
+        Task {
+            try? await ws.sendHidMouseMove(toX: toX, toY: toY)
+            try? await ws.sendHidMouseButton(button: buttonName, state: isDown)
+        }
     }
 
     func handleVideoMouseScroll(deltaX: CGFloat, deltaY: CGFloat) {
         guard isMouseCaptureEnabled else { return }
-        let scrollEvent = MouseScrollEvent(deltaX: deltaX, deltaY: deltaY, timestamp: CACurrentMediaTime())
-        sendMouseScrollEvent(scrollEvent)
-    }
+        guard let ws = glkvmWebSocketClient else { return }
 
-    func setTransportMode(_ mode: TransportMode) {
-        transportMode = mode
-        switch mode {
-        case .webRTC:
-            stopMouseMoveSender()
-            disconnectGLKVMWebSocket()
-        case .glkvmWebSocket:
-            Task { [weak self] in
-                await self?.reconnectGLKVMWebSocketIfNeeded()
-            }
+        let dx = clampInt(Int(deltaX.rounded()), min: -127, max: 127)
+        let dy = clampInt(Int(deltaY.rounded()), min: -127, max: 127)
+
+        Task {
+            try? await ws.sendHidMouseWheel(deltaX: dx, deltaY: dy)
         }
     }
 
@@ -142,55 +120,38 @@ class InputManager: ObservableObject {
             await ws?.disconnect()
         }
     }
-    
+
     func startKeyboardCapture() {
         guard keyEventMonitor == nil else {
-            isCapturing = true
             isKeyboardCaptureEnabled = true
             return
         }
-        
-        isCapturing = true
+
         isKeyboardCaptureEnabled = true
-        
+
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             self?.handleKeyEvent(event)
             guard let self, self.isKeyboardCaptureEnabled else { return event }
             return nil
         }
     }
-    
+
     func stopKeyboardCapture() {
         isKeyboardCaptureEnabled = false
-        
         if let monitor = keyEventMonitor {
             NSEvent.removeMonitor(monitor)
             keyEventMonitor = nil
         }
-        
-        if !isMouseCaptureEnabled {
-            isCapturing = false
-        }
     }
-    
+
     func startMouseCapture() {
-        isCapturing = true
         isMouseCaptureEnabled = true
     }
-    
+
     func stopMouseCapture() {
         isMouseCaptureEnabled = false
-        
-        if let monitor = mouseEventMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseEventMonitor = nil
-        }
-        
-        if !isKeyboardCaptureEnabled {
-            isCapturing = false
-        }
     }
-    
+
     private func handleKeyEvent(_ event: NSEvent) {
         guard isKeyboardCaptureEnabled else { return }
 
@@ -203,7 +164,6 @@ class InputManager: ObservableObject {
             if isKeyDown, modifiers.contains(.command) {
                 if let pending = pendingCommandKeyCode,
                    commandKeySentToRemote == false,
-                   transportMode == .glkvmWebSocket,
                    let ws = glkvmWebSocketClient,
                    let metaKey = glkvmKeyForMacKeyCode(pending),
                    let keyName = glkvmKeyForMacKeyCode(keyCode) {
@@ -221,14 +181,7 @@ class InputManager: ObservableObject {
                 flushPendingCommandKeyIfNeeded(timestamp: event.timestamp, modifiers: modifiers)
             }
 
-            let keyEvent = KeyEvent(
-                keyCode: keyCode,
-                isKeyDown: isKeyDown,
-                modifiers: modifiers,
-                timestamp: event.timestamp
-            )
-
-            sendKeyEvent(keyEvent)
+            sendKeyEvent(keyCode: keyCode, isKeyDown: isKeyDown)
 
         case .flagsChanged:
             let keyCode = event.keyCode
@@ -236,6 +189,7 @@ class InputManager: ObservableObject {
 
             let flags = event.modifierFlags
             let isDown: Bool
+
             switch keyName {
             case "ShiftLeft", "ShiftRight":
                 isDown = flags.contains(.shift)
@@ -253,13 +207,7 @@ class InputManager: ObservableObject {
                 }
 
                 if commandKeySentToRemote {
-                    let keyEvent = KeyEvent(
-                        keyCode: activeCommandKeyCode ?? keyCode,
-                        isKeyDown: false,
-                        modifiers: flags,
-                        timestamp: event.timestamp
-                    )
-                    sendKeyEvent(keyEvent)
+                    sendKeyEvent(keyCode: activeCommandKeyCode ?? keyCode, isKeyDown: false)
                 }
 
                 clearPendingCommandKey()
@@ -270,16 +218,18 @@ class InputManager: ObservableObject {
                 return
             }
 
-            let keyEvent = KeyEvent(
-                keyCode: keyCode,
-                isKeyDown: isDown,
-                modifiers: flags,
-                timestamp: event.timestamp
-            )
-            sendKeyEvent(keyEvent)
+            sendKeyEvent(keyCode: keyCode, isKeyDown: isDown)
 
         default:
             break
+        }
+    }
+
+    private func sendKeyEvent(keyCode: UInt16, isKeyDown: Bool) {
+        guard let key = glkvmKeyForMacKeyCode(keyCode), let ws = glkvmWebSocketClient else { return }
+
+        Task {
+            try? await ws.sendHidKey(key: key, state: isKeyDown)
         }
     }
 
@@ -290,297 +240,31 @@ class InputManager: ObservableObject {
     }
 
     private func flushPendingCommandKeyIfNeeded(timestamp: TimeInterval, modifiers: NSEvent.ModifierFlags) {
+        _ = timestamp
+        _ = modifiers
         guard let pendingCommandKeyCode, commandKeySentToRemote == false else { return }
         activeCommandKeyCode = pendingCommandKeyCode
         self.pendingCommandKeyCode = nil
         commandKeySentToRemote = true
 
-        let keyEvent = KeyEvent(
-            keyCode: activeCommandKeyCode ?? pendingCommandKeyCode,
-            isKeyDown: true,
-            modifiers: modifiers,
-            timestamp: timestamp
-        )
-        sendKeyEvent(keyEvent)
+        sendKeyEvent(keyCode: activeCommandKeyCode ?? pendingCommandKeyCode, isKeyDown: true)
     }
 
-    private func handleMouseEvent(_ event: NSEvent) {
-        guard isMouseCaptureEnabled else { return }
-        
-        switch event.type {
-        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp:
-            let mouseEvent = MouseButtonEvent(
-                button: event.type == .leftMouseDown || event.type == .leftMouseUp ? .left : .right,
-                isDown: event.type == .leftMouseDown || event.type == .rightMouseDown,
-                position: CGPoint(x: event.locationInWindow.x, y: event.locationInWindow.y),
-                timestamp: event.timestamp
-            )
-            sendMouseButtonEvent(mouseEvent)
-            
-        case .mouseMoved:
-            let mouseEvent = MouseMoveEvent(
-                position: CGPoint(x: event.locationInWindow.x, y: event.locationInWindow.y),
-                timestamp: event.timestamp
-            )
-            sendMouseMoveEvent(mouseEvent)
-            
-        case .scrollWheel:
-            let scrollEvent = MouseScrollEvent(
-                deltaX: event.scrollingDeltaX,
-                deltaY: event.scrollingDeltaY,
-                timestamp: event.timestamp
-            )
-            sendMouseScrollEvent(scrollEvent)
-            
-        default:
-            break
-        }
-    }
-    
-    func sendClick(at location: CGPoint, in geometry: GeometryProxy, videoSize: CGSize? = nil) {
-        let normalizedPosition = normalizePointInViewToVideo(
-            pointInView: location,
-            viewSize: geometry.size,
-            videoSize: videoSize
-        )
-        
-        let clickEvent = MouseButtonEvent(
-            button: .left,
-            isDown: true,
-            position: normalizedPosition,
-            timestamp: CACurrentMediaTime()
-        )
-        
-        sendMouseButtonEvent(clickEvent)
-        
-        // Send release event after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            let releaseEvent = MouseButtonEvent(
-                button: .left,
-                isDown: false,
-                position: normalizedPosition,
-                timestamp: CACurrentMediaTime()
-            )
-            self.sendMouseButtonEvent(releaseEvent)
-        }
-    }
-    
-    private func sendKeyEvent(_ event: KeyEvent) {
-        if transportMode == .glkvmWebSocket,
-           let key = glkvmKeyForMacKeyCode(event.keyCode),
-           let ws = glkvmWebSocketClient {
-            Task {
-                try? await ws.sendHidKey(key: key, state: event.isKeyDown)
-            }
-            return
-        }
-
-        let inputEvent = InputEvent(
-            type: "keyboard",
-            data: [
-                "keyCode": .int(Int(event.keyCode)),
-                "isKeyDown": .bool(event.isKeyDown),
-                "modifiers": .int(Int(event.modifiers.rawValue)),
-                "timestamp": .double(event.timestamp)
-            ]
-        )
-        
-        webRTCManager?.sendInputEvent(inputEvent)
-    }
-    
-    private func sendMouseButtonEvent(_ event: MouseButtonEvent) {
-        if transportMode == .glkvmWebSocket,
-           let button = glkvmMouseButtonName(event.button),
-           isNormalized(event.position),
-           let ws = glkvmWebSocketClient {
-            let (toX, toY) = glkvmAbsolutePoint(fromNormalized: event.position)
-            Task {
-                try? await ws.sendHidMouseMove(toX: toX, toY: toY)
-                try? await ws.sendHidMouseButton(button: button, state: event.isDown)
-            }
-            return
-        }
-
-        let inputEvent = InputEvent(
-            type: "mouse-button",
-            data: [
-                "button": .int(event.button.rawValue),
-                "isDown": .bool(event.isDown),
-                "x": .double(event.position.x),
-                "y": .double(event.position.y),
-                "timestamp": .double(event.timestamp)
-            ]
-        )
-        
-        webRTCManager?.sendInputEvent(inputEvent)
-    }
-    
-    private func sendMouseMoveEvent(_ event: MouseMoveEvent) {
-        if transportMode == .glkvmWebSocket, isNormalized(event.position), let ws = glkvmWebSocketClient {
-            let (toX, toY) = glkvmAbsolutePoint(fromNormalized: event.position)
-            Task {
-                try? await ws.sendHidMouseMove(toX: toX, toY: toY)
-            }
-            return
-        }
-
-        let inputEvent = InputEvent(
-            type: "mouse-move",
-            data: [
-                "x": .double(event.position.x),
-                "y": .double(event.position.y),
-                "timestamp": .double(event.timestamp)
-            ]
-        )
-        
-        webRTCManager?.sendInputEvent(inputEvent)
-    }
-    
-    private func sendMouseScrollEvent(_ event: MouseScrollEvent) {
-        if transportMode == .glkvmWebSocket, let ws = glkvmWebSocketClient {
-            let dx = clampInt(Int(event.deltaX.rounded()), min: -127, max: 127)
-            let dy = clampInt(Int(event.deltaY.rounded()), min: -127, max: 127)
-            Task {
-                try? await ws.sendHidMouseWheel(deltaX: dx, deltaY: dy)
-            }
-            return
-        }
-
-        let inputEvent = InputEvent(
-            type: "mouse-scroll",
-            data: [
-                "deltaX": .double(event.deltaX),
-                "deltaY": .double(event.deltaY),
-                "timestamp": .double(event.timestamp)
-            ]
-        )
-        
-        webRTCManager?.sendInputEvent(inputEvent)
-    }
-    
-    func sendKeyCombination(_ keys: [UInt16], modifiers: NSEvent.ModifierFlags) {
-        for keyCode in keys {
-            let keyDownEvent = KeyEvent(
-                keyCode: keyCode,
-                isKeyDown: true,
-                modifiers: modifiers,
-                timestamp: CACurrentMediaTime()
-            )
-            sendKeyEvent(keyDownEvent)
-        }
-        
-        // Send key up events after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            for keyCode in keys.reversed() {
-                let keyUpEvent = KeyEvent(
-                    keyCode: keyCode,
-                    isKeyDown: false,
-                    modifiers: modifiers,
-                    timestamp: CACurrentMediaTime()
-                )
-                self.sendKeyEvent(keyUpEvent)
-            }
-        }
-    }
-    
-    func sendText(_ text: String) {
-        for character in text {
-            let keyCode = self.keyCodeForCharacter(character)
-            let keyEvent = KeyEvent(
-                keyCode: keyCode,
-                isKeyDown: true,
-                modifiers: [],
-                timestamp: CACurrentMediaTime()
-            )
-            sendKeyEvent(keyEvent)
-            
-            // Send key up event
-            let keyUpEvent = KeyEvent(
-                keyCode: keyCode,
-                isKeyDown: false,
-                modifiers: [],
-                timestamp: CACurrentMediaTime()
-            )
-            sendKeyEvent(keyUpEvent)
-        }
-    }
-    
-    private func keyCodeForCharacter(_ character: Character) -> UInt16 {
-        // Basic mapping for common characters
-        // In a real implementation, you'd want a more comprehensive mapping
-        switch character {
-        case "a": return 0
-        case "b": return 11
-        case "c": return 8
-        case "d": return 2
-        case "e": return 14
-        case "f": return 3
-        case "g": return 5
-        case "h": return 4
-        case "i": return 34
-        case "j": return 38
-        case "k": return 40
-        case "l": return 37
-        case "m": return 46
-        case "n": return 45
-        case "o": return 31
-        case "p": return 35
-        case "q": return 12
-        case "r": return 15
-        case "s": return 1
-        case "t": return 17
-        case "u": return 32
-        case "v": return 9
-        case "w": return 13
-        case "x": return 7
-        case "y": return 16
-        case "z": return 6
-        case " ": return 49
-        case "\n": return 36
-        case ",": return 43
-        case ".": return 47
-        case "/": return 44
-        case ";": return 41
-        case "'": return 39
-        case "[": return 33
-        case "]": return 30
-        case "\\": return 42
-        case "`": return 50
-        case "-": return 27
-        case "=": return 24
-        default: return 0
-        }
-    }
-    
     deinit {
         if let monitor = keyEventMonitor {
             NSEvent.removeMonitor(monitor)
             keyEventMonitor = nil
         }
-
-        if let monitor = mouseEventMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseEventMonitor = nil
-        }
     }
 
     private func reconnectGLKVMWebSocketIfNeeded() async {
-        if transportMode != .glkvmWebSocket {
-            return
-        }
-        guard let client = glkvmClient else {
-            return
-        }
+        guard let client = glkvmClient else { return }
 
         if glkvmWebSocketClient == nil {
-            let ws = try? client.makeWebSocketClient(stream: false)
+            let ws = try? client.makeWebSocketClient()
             glkvmWebSocketClient = ws
             await ws?.connect()
         }
-    }
-
-    private func isNormalized(_ point: CGPoint) -> Bool {
-        point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1
     }
 
     private func glkvmAbsolutePoint(fromNormalized point: CGPoint) -> (Int, Int) {
@@ -668,7 +352,6 @@ class InputManager: ObservableObject {
         case 7: return "KeyX"
         case 16: return "KeyY"
         case 6: return "KeyZ"
-
         case 18: return "Digit1"
         case 19: return "Digit2"
         case 20: return "Digit3"
@@ -679,7 +362,6 @@ class InputManager: ObservableObject {
         case 28: return "Digit8"
         case 25: return "Digit9"
         case 29: return "Digit0"
-
         case 50: return "Backquote"
         case 27: return "Minus"
         case 24: return "Equal"
@@ -691,13 +373,11 @@ class InputManager: ObservableObject {
         case 43: return "Comma"
         case 47: return "Period"
         case 44: return "Slash"
-
         case 49: return "Space"
         case 48: return "Tab"
         case 36: return "Enter"
         case 51: return "Backspace"
         case 53: return "Escape"
-
         case 82: return "Numpad0"
         case 83: return "Numpad1"
         case 84: return "Numpad2"
@@ -715,20 +395,16 @@ class InputManager: ObservableObject {
         case 75: return "NumpadDivide"
         case 76: return "NumpadEnter"
         case 81: return "NumpadEqual"
-
         case 114: return "Help"
-
         case 115: return "Home"
         case 119: return "End"
         case 116: return "PageUp"
         case 121: return "PageDown"
         case 117: return "Delete"
-
         case 123: return "ArrowLeft"
         case 124: return "ArrowRight"
         case 125: return "ArrowDown"
         case 126: return "ArrowUp"
-
         case 55: return "MetaLeft"
         case 54: return "MetaRight"
         case 56: return "ShiftLeft"
@@ -738,7 +414,6 @@ class InputManager: ObservableObject {
         case 59: return "ControlLeft"
         case 62: return "ControlRight"
         case 57: return "CapsLock"
-
         case 122: return "F1"
         case 120: return "F2"
         case 99: return "F3"
@@ -751,13 +426,11 @@ class InputManager: ObservableObject {
         case 109: return "F10"
         case 103: return "F11"
         case 111: return "F12"
-
         case 105: return "F13"
         case 107: return "F14"
         case 113: return "F15"
         case 106: return "F16"
         case 64: return "F17"
-
         default:
             return nil
         }
@@ -770,114 +443,20 @@ class InputManager: ObservableObject {
     }
 }
 
-// MARK: - Input Event Types
-struct KeyEvent {
-    let keyCode: UInt16
-    let isKeyDown: Bool
-    let modifiers: NSEvent.ModifierFlags
-    let timestamp: CFTimeInterval
-}
-
-struct MouseButtonEvent {
-    let button: MouseButton
-    let isDown: Bool
-    let position: CGPoint
-    let timestamp: CFTimeInterval
-}
-
-struct MouseMoveEvent {
-    let position: CGPoint
-    let timestamp: CFTimeInterval
-}
-
-struct MouseScrollEvent {
-    let deltaX: CGFloat
-    let deltaY: CGFloat
-    let timestamp: CFTimeInterval
-}
-
 enum MouseButton: Int, Codable {
     case left = 0
     case right = 1
     case middle = 2
 }
 
-// MARK: - Input Capture Extensions
 extension InputManager {
-    func toggleKeyboardCapture() {
-        if isKeyboardCaptureEnabled {
-            stopKeyboardCapture()
-        } else {
-            startKeyboardCapture()
-        }
-    }
-    
-    func toggleMouseCapture() {
-        if isMouseCaptureEnabled {
-            stopMouseCapture()
-        } else {
-            startMouseCapture()
-        }
-    }
-    
     func startFullInputCapture() {
         startKeyboardCapture()
         startMouseCapture()
     }
-    
+
     func stopFullInputCapture() {
         stopKeyboardCapture()
         stopMouseCapture()
-    }
-}
-
-// MARK: - Accessibility Permissions Helper
-extension InputManager {
-    func checkAccessibilityPermissions() -> Bool {
-        return AXIsProcessTrusted()
-    }
-    
-    func requestAccessibilityPermissions() {
-        let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true]
-        AXIsProcessTrustedWithOptions(options as CFDictionary)
-    }
-    
-    func showAccessibilityPermissionDialog() {
-        let alert = NSAlert()
-        alert.messageText = "Accessibility Permissions Required"
-        alert.informativeText = "GLKVM Client needs accessibility permissions to capture keyboard and mouse input for remote control. Please grant permissions in System Preferences > Security & Privacy > Privacy > Accessibility."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Preferences")
-        alert.addButton(withTitle: "Cancel")
-        
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            // Open System Preferences to Accessibility section
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-            NSWorkspace.shared.open(url)
-        }
-    }
-}
-
-// MARK: - Input Validation and Filtering
-extension InputManager {
-    private func shouldCaptureKeyEvent(_ event: NSEvent) -> Bool {
-        // Filter out system key combinations that should remain local
-        let systemKeyCombinations: [UInt16] = [
-            55, // Command
-            56, // Shift
-            57, // Option
-            58, // Control
-            59, // Caps Lock
-            60, // Function
-        ]
-        
-        return !systemKeyCombinations.contains(event.keyCode)
-    }
-    
-    private func shouldCaptureMouseEvent(_ event: NSEvent) -> Bool {
-        // Filter out mouse events that should remain local
-        // This is a basic implementation - you might want to add more sophisticated filtering
-        return true
     }
 }

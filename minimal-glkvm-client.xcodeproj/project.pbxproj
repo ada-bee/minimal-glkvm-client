@@ -13,10 +13,10 @@
 		01000006 /* WebRTCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* WebRTCManager.swift */; };
 		01000007 /* InputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000007 /* InputManager.swift */; };
 		01000009 /* KVMDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000009 /* KVMDeviceManager.swift */; };
-		01000011 /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000011 /* JSONValue.swift */; };
+
 		01000015 /* GLKVMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000015 /* GLKVMClient.swift */; };
 		01000016 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 14000001 /* WebRTC */; };
-		01000017 /* WebUISettingsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000016 /* WebUISettingsPanel.swift */; };
+
 		01000019 /* ConnectSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000018 /* ConnectSheets.swift */; };
 		0100001B /* VideoSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0200001A /* VideoSurfaceView.swift */; };
 		0100001F /* WebRTCFactoryBuilder.m in Sources */ = {isa = PBXBuildFile; fileRef = 02000021 /* WebRTCFactoryBuilder.m */; };
@@ -30,9 +30,9 @@
 		02000006 /* WebRTCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebRTCManager.swift; sourceTree = "<group>"; };
 		02000007 /* InputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputManager.swift; sourceTree = "<group>"; };
 		02000009 /* KVMDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KVMDeviceManager.swift; sourceTree = "<group>"; };
-		02000011 /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
+
 		02000015 /* GLKVMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GLKVMClient.swift; sourceTree = "<group>"; };
-		02000016 /* WebUISettingsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUISettingsPanel.swift; sourceTree = "<group>"; };
+
 		02000018 /* ConnectSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectSheets.swift; sourceTree = "<group>"; };
 		0200001A /* VideoSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSurfaceView.swift; sourceTree = "<group>"; };
 		0200001F /* GLKVMClient-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GLKVMClient-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -68,7 +68,7 @@
 				02000002 /* ContentView.swift */,
 				0200001A /* VideoSurfaceView.swift */,
 				02000018 /* ConnectSheets.swift */,
-				02000016 /* WebUISettingsPanel.swift */,
+
 				02000015 /* GLKVMClient.swift */,
 				02000006 /* WebRTCManager.swift */,
 				02000021 /* WebRTCFactoryBuilder.m */,
@@ -76,7 +76,7 @@
 				0200001F /* GLKVMClient-Bridging-Header.h */,
 				02000007 /* InputManager.swift */,
 				02000009 /* KVMDeviceManager.swift */,
-				02000011 /* JSONValue.swift */,
+
 				02000003 /* Assets.xcassets */,
 				02000005 /* GLKVMClient.entitlements */,
 			);
@@ -170,14 +170,14 @@
 				01000001 /* GLKVMClientApp.swift in Sources */,
 				01000002 /* ContentView.swift in Sources */,
 				0100001B /* VideoSurfaceView.swift in Sources */,
-				01000017 /* WebUISettingsPanel.swift in Sources */,
+
 				01000019 /* ConnectSheets.swift in Sources */,
 				01000015 /* GLKVMClient.swift in Sources */,
 				01000006 /* WebRTCManager.swift in Sources */,
 				0100001F /* WebRTCFactoryBuilder.m in Sources */,
 				01000007 /* InputManager.swift in Sources */,
 				01000009 /* KVMDeviceManager.swift in Sources */,
-				01000011 /* JSONValue.swift in Sources */,
+
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

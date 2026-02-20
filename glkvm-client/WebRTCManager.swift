@@ -1,46 +1,12 @@
 import Foundation
-#if canImport(CoreVideo)
-import CoreVideo
-#endif
 #if canImport(WebRTC)
 @preconcurrency import WebRTC
 #endif
-#if canImport(AVFoundation)
-import AVFoundation
-#endif
-import Network
 import Combine
-
-struct InputEvent: Codable {
-    let type: String
-    let data: [String: JSONValue]
-    
-    enum CodingKeys: String, CodingKey {
-        case type
-        case data
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(type, forKey: .type)
-        try container.encode(data, forKey: .data)
-    }
-    
-    init(type: String, data: [String: JSONValue]) {
-        self.type = type
-        self.data = data
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
-        data = try container.decode([String: JSONValue].self, forKey: .data)
-    }
-}
 
 #if canImport(WebRTC)
 @MainActor
-class WebRTCManager: NSObject, ObservableObject {
+final class WebRTCManager: NSObject, ObservableObject {
     private final class SessionDelegate: NSObject, URLSessionDelegate {
         let allowInsecureTLS: Bool
 
@@ -66,176 +32,74 @@ class WebRTCManager: NSObject, ObservableObject {
 
     @Published var videoView: RTCMTLNSVideoView?
     @Published var isConnected = false
-    @Published var latency: Int = 0
-    @Published var currentFrame: CVPixelBuffer?
-    @Published var videoSize: CGSize?
-    @Published var inboundVideoKbps: Int?
-    @Published var inboundFps: Double?
-    @Published var inboundVideoPlayoutDelayMs: Int?
-    @Published var inboundVideoJitterMs: Int?
-    @Published var inboundVideoDecodeMs: Int?
-    @Published var inboundVideoPacketsLost: Int?
-    @Published var iceCurrentRoundTripTimeMs: Int?
-    @Published var inboundAudioKbps: Int?
-    @Published var inboundAudioPlayoutDelayMs: Int?
-    @Published var inboundAudioJitterMs: Int?
-    @Published var inboundAudioPacketsLost: Int?
-    @Published var audioIceCurrentRoundTripTimeMs: Int?
-    @Published var audioEnabled = false
-    @Published var micEnabled = false
-    @Published var preferLowLatencyPlayout = true
     @Published var isConnecting = false
     @Published var hasEverConnectedToStream = false
     @Published var isStreamStalled = false
     @Published var lastDisconnectReason: String?
-    @Published var lastVideoFrameAgeSeconds: Int?
-    
+    @Published var videoSize: CGSize?
+
     private var peerConnection: RTCPeerConnection?
-    private var audioPeerConnection: RTCPeerConnection?
     private var videoTrack: RTCVideoTrack?
-    private var localAudioTrack: RTCAudioTrack?
-    private var localAudioSender: RTCRtpSender?
-    private var dataChannel: RTCDataChannel?
     private var factory: RTCPeerConnectionFactory?
-    private var connectionTimer: Timer?
-    private var latencyMeasurementStart: Date?
 
-    private var lastConnectedDevice: KVMDevice?
-
-
-    private var lastInboundVideoBytesReceived: Int64?
-    private var lastInboundVideoBytesTimestamp: TimeInterval?
-
-    private var lastInboundAudioBytesReceived: Int64?
-    private var lastInboundAudioBytesTimestamp: TimeInterval?
-
-    private var lastJitterBufferDelaySeconds: Double?
-    private var lastJitterBufferEmittedCount: Double?
-
-    private var lastAudioJitterBufferDelaySeconds: Double?
-    private var lastAudioJitterBufferEmittedCount: Double?
-
-    private var lastPlayoutHintApplyTime: TimeInterval?
-
-    private var fpsWindowStartTime: CFTimeInterval = 0
-    private var fpsFrameCount: Int = 0
-    private var lastFpsPublishTime: CFTimeInterval = 0
-
-    private let streamHealthQueue = DispatchQueue(label: "com.glkvm-client.stream-health")
-    private var lastVideoFrameTime: CFTimeInterval?
-    private var connectedIceTime: CFTimeInterval?
-    private var streamHealthTimer: Timer?
-
-    private let streamStallThresholdSeconds: CFTimeInterval = 3.0
-    private let initialFrameTimeoutSeconds: CFTimeInterval = 5.0
-    
-    private let allowInsecureTLS = true
     private var signalingSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
 
     private var janusSessionId: Int?
     private var janusHandleId: Int?
-    private var janusAudioHandleId: Int?
-    private var janusKeepAliveTimer: Timer?
     private var janusWaiters: [String: CheckedContinuation<[String: Any], Error>] = [:]
+    private var janusKeepAliveTimer: Timer?
 
-    private var isFrameCaptureEnabled: Bool = false
-    private var lastFrameCaptureTime: CFTimeInterval = 0
-    
+    private let allowInsecureTLS = true
+
     override init() {
         super.init()
         setupWebRTC()
     }
 
-    private func setLastVideoFrameTime(_ time: CFTimeInterval?) {
-        streamHealthQueue.sync {
-            lastVideoFrameTime = time
-        }
-    }
-
-    private func getLastVideoFrameTime() -> CFTimeInterval? {
-        streamHealthQueue.sync {
-            lastVideoFrameTime
-        }
-    }
-    
     private func setupWebRTC() {
         factory = WebRTCFactoryBuilder.makeFactory()
-
         if videoView == nil {
             videoView = RTCMTLNSVideoView(frame: .zero)
         }
     }
 
     func connect(to device: KVMDevice) async throws {
-        lastConnectedDevice = device
         setupWebRTC()
 
-        guard let factory = factory else {
+        guard let factory else {
             throw WebRTCError.factoryNotInitialized
         }
 
         isConnecting = true
+        isConnected = false
         isStreamStalled = false
         lastDisconnectReason = nil
-        lastVideoFrameAgeSeconds = nil
-        setLastVideoFrameTime(nil)
-        connectedIceTime = nil
-        hasEverConnectedToStream = false
 
         do {
             if videoView == nil {
                 videoView = RTCMTLNSVideoView(frame: .zero)
             }
-            
-            // Create peer connection
+
             let configuration = RTCConfiguration()
             configuration.iceServers = []
             configuration.sdpSemantics = .unifiedPlan
-            
+
             let constraints = RTCMediaConstraints(
                 mandatoryConstraints: nil,
                 optionalConstraints: ["OfferToReceiveVideo": "true"]
             )
-            
+
             peerConnection = factory.peerConnection(
                 with: configuration,
                 constraints: constraints,
                 delegate: self
             )
 
-            if audioEnabled || micEnabled {
-                let audioConstraints = RTCMediaConstraints(
-                    mandatoryConstraints: nil,
-                    optionalConstraints: ["OfferToReceiveAudio": "true", "OfferToReceiveVideo": "false"]
-                )
-                audioPeerConnection = factory.peerConnection(
-                    with: configuration,
-                    constraints: audioConstraints,
-                    delegate: self
-                )
-            }
-
-            if micEnabled {
-                let granted = await ensureMicrophoneAccess()
-                if granted {
-                    setupLocalMicrophoneTrackIfNeeded(factory: factory, peerConnection: audioPeerConnection ?? peerConnection)
-                }
-            }
-            
-            // Setup data channel for input events
-            setupDataChannel()
-            
-            // Connect to signaling server
             try await connectToSignalingServer(device: device)
-            
-            // Start connection quality monitoring
-            startLatencyMonitoring()
-            startStreamHealthMonitoring()
         } catch {
-            let reason = "Connect failed: \(String(describing: error))"
             disconnect()
-            lastDisconnectReason = reason
+            lastDisconnectReason = "Connect failed"
             throw error
         }
     }
@@ -246,56 +110,16 @@ class WebRTCManager: NSObject, ObservableObject {
             try await connect(to: device)
         } catch {
             isConnecting = false
-            lastDisconnectReason = "Reconnect failed: \(String(describing: error))"
+            lastDisconnectReason = "Reconnect failed"
         }
     }
 
-    func setFrameCaptureEnabled(_ enabled: Bool) {
-        isFrameCaptureEnabled = enabled
-
-        if enabled == false {
-            currentFrame = nil
-        }
-    }
-    
-    private func setupDataChannel() {
-        guard let peerConnection = peerConnection else { return }
-        
-        let dataChannelConfig = RTCDataChannelConfiguration()
-        dataChannelConfig.isOrdered = true
-        dataChannelConfig.isNegotiated = false
-        dataChannelConfig.channelId = 0
-        
-        dataChannel = peerConnection.dataChannel(
-            forLabel: "input-events",
-            configuration: dataChannelConfig
-        )
-        dataChannel?.delegate = self
-    }
-
-    func setPreferLowLatencyPlayout(_ enabled: Bool) {
-        preferLowLatencyPlayout = enabled
-        applyPlayoutDelayHintIfPossible()
-    }
-
-    private func applyPlayoutDelayHintIfPossible() {
-        guard let peerConnection else { return }
-        guard preferLowLatencyPlayout else { return }
-        for receiver in peerConnection.receivers {
-            guard let kind = receiver.track?.kind else { continue }
-            guard kind == "video" || kind == "audio" else { continue }
-            WebRTCFactoryBuilder.setPlayoutDelayHintIfSupportedFor(receiver, seconds: 0.0)
-        }
-    }
-    
     private func connectToSignalingServer(device: KVMDevice) async throws {
         guard let rawURL = URL(string: device.webRTCURL) else {
             throw WebRTCError.invalidSignalingURL
         }
 
         let url = normalizedWebSocketURL(rawURL)
-        print("WebRTC signaling connect: \(url.absoluteString)")
-
         let config = URLSessionConfiguration.default
         let session = URLSession(configuration: config, delegate: SessionDelegate(allowInsecureTLS: allowInsecureTLS), delegateQueue: nil)
         signalingSession = session
@@ -308,14 +132,12 @@ class WebRTCManager: NSObject, ObservableObject {
         request.setValue("janus-protocol", forHTTPHeaderField: "Sec-WebSocket-Protocol")
 
         webSocketTask = session.webSocketTask(with: request)
-        
         webSocketTask?.resume()
 
         Task {
             await listenForSignalingMessages()
         }
 
-        // Janus session setup
         let createTransaction = makeJanusTransaction()
         try await sendJanusMessage([
             "janus": "create",
@@ -345,7 +167,6 @@ class WebRTCManager: NSObject, ObservableObject {
         }
         janusHandleId = handleId
 
-        // Video handle always requests video-only to avoid A/V sync causing video buffering.
         let watchTransaction = makeJanusTransaction()
         try await sendJanusMessage([
             "janus": "message",
@@ -364,44 +185,6 @@ class WebRTCManager: NSObject, ObservableObject {
             "handle_id": handleId,
         ])
 
-        if (audioEnabled || micEnabled), let audioPeerConnection {
-            let audioAttachTransaction = makeJanusTransaction()
-            try await sendJanusMessage([
-                "janus": "attach",
-                "plugin": "janus.plugin.ustreamer",
-                "opaque_id": "oid-audio-\(UUID().uuidString)",
-                "transaction": audioAttachTransaction,
-                "session_id": sessionId,
-            ])
-
-            let audioAttachResponse = try await waitForJanusTransaction(audioAttachTransaction)
-            guard let audioAttachData = audioAttachResponse["data"] as? [String: Any],
-                  let audioHandleId = audioAttachData["id"] as? Int else {
-                throw WebRTCError.signalingConnectionLost
-            }
-            janusAudioHandleId = audioHandleId
-
-            let audioWatchTransaction = makeJanusTransaction()
-            try await sendJanusMessage([
-                "janus": "message",
-                "body": [
-                    "request": "watch",
-                    "params": [
-                        "orientation": 0,
-                        "audio": audioEnabled,
-                        "video": false,
-                        "mic": micEnabled,
-                        "camera": false,
-                    ],
-                ],
-                "transaction": audioWatchTransaction,
-                "session_id": sessionId,
-                "handle_id": audioHandleId,
-            ])
-
-            _ = audioPeerConnection
-        }
-
         startJanusKeepAlive()
     }
 
@@ -410,11 +193,7 @@ class WebRTCManager: NSObject, ObservableObject {
         janusKeepAliveTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                do {
-                    try await self.sendJanusKeepAlive()
-                } catch {
-                    // Ignore keepalive errors, next user action will reconnect
-                }
+                try? await self.sendJanusKeepAlive()
             }
         }
     }
@@ -429,10 +208,7 @@ class WebRTCManager: NSObject, ObservableObject {
     }
 
     private func sendJanusTrickleCandidate(_ candidate: RTCIceCandidate, handleId: Int) async throws {
-        guard let sessionId = janusSessionId else {
-            return
-        }
-
+        guard let sessionId = janusSessionId else { return }
         try await sendJanusMessage([
             "janus": "trickle",
             "candidate": [
@@ -447,10 +223,7 @@ class WebRTCManager: NSObject, ObservableObject {
     }
 
     private func sendJanusTrickleCompleted(handleId: Int) async throws {
-        guard let sessionId = janusSessionId else {
-            return
-        }
-
+        guard let sessionId = janusSessionId else { return }
         try await sendJanusMessage([
             "janus": "trickle",
             "candidate": ["completed": true],
@@ -471,7 +244,7 @@ class WebRTCManager: NSObject, ObservableObject {
     }
 
     private func sendJanusMessage(_ message: [String: Any]) async throws {
-        guard let webSocketTask = webSocketTask,
+        guard let webSocketTask,
               let data = try? JSONSerialization.data(withJSONObject: message),
               let text = String(data: data, encoding: .utf8) else {
             throw WebRTCError.signalingConnectionLost
@@ -494,14 +267,13 @@ class WebRTCManager: NSObject, ObservableObject {
 
         return comps.url ?? url
     }
-    
+
     private func listenForSignalingMessages() async {
-        while let webSocketTask = webSocketTask {
+        while let webSocketTask {
             do {
                 let message = try await webSocketTask.receive()
                 await handleSignalingMessage(message)
             } catch {
-                print("WebSocket receive error: \(error)")
                 isConnecting = false
                 if isConnected || hasEverConnectedToStream || lastDisconnectReason == nil {
                     lastDisconnectReason = "Signaling connection lost"
@@ -510,7 +282,7 @@ class WebRTCManager: NSObject, ObservableObject {
             }
         }
     }
-    
+
     private func handleSignalingMessage(_ message: URLSessionWebSocketTask.Message) async {
         switch message {
         case .string(let string):
@@ -518,16 +290,12 @@ class WebRTCManager: NSObject, ObservableObject {
                   let signalingMessage = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return
             }
-
             await handleJanusMessage(signalingMessage)
-            
         case .data(let data):
             guard let signalingMessage = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return
             }
-
             await handleJanusMessage(signalingMessage)
-            
         @unknown default:
             break
         }
@@ -544,16 +312,8 @@ class WebRTCManager: NSObject, ObservableObject {
         if janusType == "trickle" {
             guard let candidateObj = message["candidate"] as? [String: Any],
                   let candidateString = candidateObj["candidate"] as? String,
-                  let videoPeerConnection = peerConnection else {
+                  let peerConnection else {
                 return
-            }
-
-            let senderHandleId = message["sender"] as? Int
-            let peerConnection: RTCPeerConnection
-            if let senderHandleId, senderHandleId == janusAudioHandleId, let audioPeerConnection {
-                peerConnection = audioPeerConnection
-            } else {
-                peerConnection = videoPeerConnection
             }
 
             if (candidateObj["completed"] as? Bool) == true {
@@ -569,6 +329,7 @@ class WebRTCManager: NSObject, ObservableObject {
             } else {
                 sdpMLineIndex = 0
             }
+
             let iceCandidate = RTCIceCandidate(sdp: candidateString, sdpMLineIndex: sdpMLineIndex, sdpMid: sdpMid)
             try? await peerConnection.add(iceCandidate)
             return
@@ -576,7 +337,6 @@ class WebRTCManager: NSObject, ObservableObject {
 
         if janusType != "event" { return }
 
-        let senderHandleId = message["sender"] as? Int
         guard let jsep = message["jsep"] as? [String: Any],
               let jsepType = jsep["type"] as? String,
               jsepType == "offer",
@@ -584,672 +344,126 @@ class WebRTCManager: NSObject, ObservableObject {
             return
         }
 
-        await handleOfferSDP(sdpString, senderHandleId: senderHandleId)
+        await handleOfferSDP(sdpString)
     }
-    
-    private func handleOfferSDP(_ sdpString: String, senderHandleId: Int?) async {
-        guard let videoHandleId = janusHandleId else { return }
 
-        let peerConnection: RTCPeerConnection?
-        let handleId: Int?
-        if let senderHandleId, senderHandleId == janusAudioHandleId {
-            peerConnection = audioPeerConnection
-            handleId = janusAudioHandleId
-        } else {
-            peerConnection = self.peerConnection
-            handleId = videoHandleId
-        }
+    private func handleOfferSDP(_ sdpString: String) async {
+        guard let peerConnection else { return }
 
-        guard let peerConnection, let handleId else { return }
-        
-        let sessionDescription = RTCSessionDescription(
-            type: .offer,
-            sdp: sdpString
-        )
-        
+        let sessionDescription = RTCSessionDescription(type: .offer, sdp: sdpString)
         do {
             try await peerConnection.setRemoteDescription(sessionDescription)
         } catch {
-            print("Failed to set remote description: \(error)")
+            return
         }
-        
-        // Create and send answer
-        await createAndSendAnswer(peerConnection: peerConnection, handleId: handleId)
+
+        await createAndSendAnswer(peerConnection: peerConnection)
     }
 
-    private func createAndSendAnswer(peerConnection: RTCPeerConnection, handleId: Int) async {
-
+    private func createAndSendAnswer(peerConnection: RTCPeerConnection) async {
         do {
             let sessionDescription = try await peerConnection.answer(
                 for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
             )
             try await peerConnection.setLocalDescription(sessionDescription)
         } catch {
-            print("Failed to create/send answer: \(error)")
             return
         }
-        
-        // Send answer to Janus
+
         guard let localDescription = peerConnection.localDescription,
-              let sessionId = janusSessionId else {
+              let sessionId = janusSessionId,
+              let handleId = janusHandleId else {
             return
         }
 
         let startTransaction = makeJanusTransaction()
-        do {
-            try await sendJanusMessage([
-                "janus": "message",
-                "body": ["request": "start"],
-                "transaction": startTransaction,
-                "session_id": sessionId,
-                "handle_id": handleId,
-                "jsep": [
-                    "type": "answer",
-                    "sdp": localDescription.sdp,
-                ],
-            ])
-        } catch {
-            print("Failed to send Janus answer: \(error)")
-        }
-    }
-    
-    private func startLatencyMonitoring() {
-        connectionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            Task {
-                await self.measureLatency()
-                await self.measureStreamStats()
-            }
-        }
+        try? await sendJanusMessage([
+            "janus": "message",
+            "body": ["request": "start"],
+            "transaction": startTransaction,
+            "session_id": sessionId,
+            "handle_id": handleId,
+            "jsep": [
+                "type": "answer",
+                "sdp": localDescription.sdp,
+            ],
+        ])
     }
 
-    private func startStreamHealthMonitoring() {
-        streamHealthTimer?.invalidate()
-        streamHealthTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
-                let now = CACurrentMediaTime()
-
-                if self.isConnected == false {
-                    self.isStreamStalled = false
-                    self.lastVideoFrameAgeSeconds = nil
-                    return
-                }
-
-                let lastFrame = self.getLastVideoFrameTime()
-                let age = lastFrame.map { now - $0 }
-
-                if let age {
-                    self.lastVideoFrameAgeSeconds = max(0, Int(age.rounded()))
-                } else {
-                    self.lastVideoFrameAgeSeconds = nil
-                }
-
-                if let age, age > self.streamStallThresholdSeconds {
-                    if self.isStreamStalled == false {
-                        self.isStreamStalled = true
-                        self.lastDisconnectReason = "Video stream stalled"
-                    }
-                    return
-                }
-
-                if lastFrame == nil,
-                   let connectedAt = self.connectedIceTime,
-                   now - connectedAt > self.initialFrameTimeoutSeconds {
-                    if self.isStreamStalled == false {
-                        self.isStreamStalled = true
-                        self.lastDisconnectReason = "Video stream stalled"
-                    }
-                    return
-                }
-
-                if self.isStreamStalled {
-                    self.isStreamStalled = false
-                    self.lastDisconnectReason = nil
-                }
-            }
-        }
-    }
-
-    private func measureStreamStats() async {
-        guard let peerConnection else {
-            await MainActor.run {
-                inboundVideoKbps = nil
-                inboundVideoPlayoutDelayMs = nil
-                inboundVideoJitterMs = nil
-                inboundVideoDecodeMs = nil
-                inboundVideoPacketsLost = nil
-                iceCurrentRoundTripTimeMs = nil
-                inboundAudioKbps = nil
-                inboundAudioPlayoutDelayMs = nil
-                inboundAudioJitterMs = nil
-                inboundAudioPacketsLost = nil
-                audioIceCurrentRoundTripTimeMs = nil
-            }
-            return
-        }
-
-        if preferLowLatencyPlayout {
-            let now = Date().timeIntervalSince1970
-            if lastPlayoutHintApplyTime == nil || (now - (lastPlayoutHintApplyTime ?? 0)) > 2.0 {
-                applyPlayoutDelayHintIfPossible()
-                lastPlayoutHintApplyTime = now
-            }
-        }
-
-        let lastBytes = lastInboundVideoBytesReceived
-        let lastTs = lastInboundVideoBytesTimestamp
-
-        let report = await peerConnection.statistics()
-        func numberValue(_ any: Any?) -> NSNumber? {
-            any as? NSNumber
-        }
-
-        var bytesReceived: Int64?
-        var jitterSeconds: Double?
-        var jitterBufferDelaySeconds: Double?
-        var jitterBufferEmittedCount: Double?
-        var totalDecodeTimeSeconds: Double?
-        var framesDecoded: Double?
-        var packetsLost: Int?
-
-        var currentRoundTripTimeSeconds: Double?
-
-        for statistic in report.statistics.values {
-            if statistic.type == "candidate-pair" {
-                let selected = (statistic.values["selected"] as? Bool)
-                    ?? (numberValue(statistic.values["selected"])?.boolValue)
-                    ?? false
-                guard selected else { continue }
-
-                if let rtt = numberValue(statistic.values["currentRoundTripTime"])?.doubleValue {
-                    currentRoundTripTimeSeconds = rtt
-                }
-                continue
-            }
-
-            guard statistic.type == "inbound-rtp" else { continue }
-
-            if let kind = statistic.values["kind"] as? String, kind != "video" { continue }
-            if let mediaType = statistic.values["mediaType"] as? String, mediaType != "video" { continue }
-
-            if let n = numberValue(statistic.values["bytesReceived"]) {
-                bytesReceived = n.int64Value
-            }
-            if let n = numberValue(statistic.values["jitter"]) {
-                jitterSeconds = n.doubleValue
-            }
-            if let n = numberValue(statistic.values["jitterBufferDelay"]) {
-                jitterBufferDelaySeconds = n.doubleValue
-            }
-            if let n = numberValue(statistic.values["jitterBufferEmittedCount"]) {
-                jitterBufferEmittedCount = n.doubleValue
-            }
-            if let n = numberValue(statistic.values["totalDecodeTime"]) {
-                totalDecodeTimeSeconds = n.doubleValue
-            }
-            if let n = numberValue(statistic.values["framesDecoded"]) {
-                framesDecoded = n.doubleValue
-            }
-            if let n = numberValue(statistic.values["packetsLost"]) {
-                packetsLost = n.intValue
-            }
-
-            break
-        }
-
-        let now = Date().timeIntervalSince1970
-
-        guard let bytesReceived else {
-            await MainActor.run {
-                self.lastInboundVideoBytesReceived = nil
-                self.lastInboundVideoBytesTimestamp = nil
-                self.inboundVideoKbps = nil
-                self.inboundVideoPlayoutDelayMs = nil
-                self.inboundVideoJitterMs = nil
-                self.inboundVideoDecodeMs = nil
-                self.inboundVideoPacketsLost = nil
-                self.iceCurrentRoundTripTimeMs = nil
-            }
-            return
-        }
-
-        var kbps: Int?
-        if let lastBytes, let lastTs {
-            let dt = now - lastTs
-            let db = Double(bytesReceived - lastBytes)
-            if dt > 0, db >= 0 {
-                kbps = Int((db * 8.0 / dt) / 1000.0)
-            }
-        }
-
-        let jitterMs: Int?
-        if let jitterSeconds {
-            jitterMs = Int((jitterSeconds * 1000.0).rounded())
-        } else {
-            jitterMs = nil
-        }
-
-        let playoutDelayMs: Int? = {
-            guard let jitterBufferDelaySeconds,
-                  let jitterBufferEmittedCount,
-                  jitterBufferEmittedCount > 0 else {
-                return nil
-            }
-
-            if let lastDelay = lastJitterBufferDelaySeconds,
-               let lastEmitted = lastJitterBufferEmittedCount {
-                let dDelay = jitterBufferDelaySeconds - lastDelay
-                let dEmit = jitterBufferEmittedCount - lastEmitted
-                if dDelay >= 0, dEmit > 0 {
-                    return Int(((dDelay / dEmit) * 1000.0).rounded())
-                }
-            }
-
-            return Int(((jitterBufferDelaySeconds / jitterBufferEmittedCount) * 1000.0).rounded())
-        }()
-
-        let decodeMs: Int?
-        if let totalDecodeTimeSeconds,
-           let framesDecoded,
-           framesDecoded > 0 {
-            decodeMs = Int(((totalDecodeTimeSeconds / framesDecoded) * 1000.0).rounded())
-        } else {
-            decodeMs = nil
-        }
-
-        let rttMs: Int?
-        if let currentRoundTripTimeSeconds {
-            rttMs = Int((currentRoundTripTimeSeconds * 1000.0).rounded())
-        } else {
-            rttMs = nil
-        }
-
-        await MainActor.run {
-            self.lastInboundVideoBytesReceived = bytesReceived
-            self.lastInboundVideoBytesTimestamp = now
-            self.lastJitterBufferDelaySeconds = jitterBufferDelaySeconds
-            self.lastJitterBufferEmittedCount = jitterBufferEmittedCount
-            self.inboundVideoKbps = kbps
-            self.inboundVideoPlayoutDelayMs = playoutDelayMs
-            self.inboundVideoJitterMs = jitterMs
-            self.inboundVideoDecodeMs = decodeMs
-            self.inboundVideoPacketsLost = packetsLost
-            self.iceCurrentRoundTripTimeMs = rttMs
-        }
-
-        guard let audioPeerConnection else {
-            await MainActor.run {
-                self.lastInboundAudioBytesReceived = nil
-                self.lastInboundAudioBytesTimestamp = nil
-                self.lastAudioJitterBufferDelaySeconds = nil
-                self.lastAudioJitterBufferEmittedCount = nil
-                self.inboundAudioKbps = nil
-                self.inboundAudioPlayoutDelayMs = nil
-                self.inboundAudioJitterMs = nil
-                self.inboundAudioPacketsLost = nil
-                self.audioIceCurrentRoundTripTimeMs = nil
-            }
-            return
-        }
-
-        let lastAudioBytes = lastInboundAudioBytesReceived
-        let lastAudioTs = lastInboundAudioBytesTimestamp
-
-        let audioReport = await audioPeerConnection.statistics()
-        func audioNumberValue(_ any: Any?) -> NSNumber? {
-            any as? NSNumber
-        }
-
-        var audioBytesReceived: Int64?
-        var audioJitterSeconds: Double?
-        var audioJitterBufferDelaySeconds: Double?
-        var audioJitterBufferEmittedCount: Double?
-        var audioPacketsLost: Int?
-        var audioCurrentRoundTripTimeSeconds: Double?
-
-        for statistic in audioReport.statistics.values {
-            if statistic.type == "candidate-pair" {
-                let selected = (statistic.values["selected"] as? Bool)
-                    ?? (audioNumberValue(statistic.values["selected"])?.boolValue)
-                    ?? false
-                guard selected else { continue }
-
-                if let rtt = audioNumberValue(statistic.values["currentRoundTripTime"])?.doubleValue {
-                    audioCurrentRoundTripTimeSeconds = rtt
-                }
-                continue
-            }
-
-            guard statistic.type == "inbound-rtp" else { continue }
-
-            if let kind = statistic.values["kind"] as? String, kind != "audio" { continue }
-            if let mediaType = statistic.values["mediaType"] as? String, mediaType != "audio" { continue }
-
-            if let n = audioNumberValue(statistic.values["bytesReceived"]) {
-                audioBytesReceived = n.int64Value
-            }
-            if let n = audioNumberValue(statistic.values["jitter"]) {
-                audioJitterSeconds = n.doubleValue
-            }
-            if let n = audioNumberValue(statistic.values["jitterBufferDelay"]) {
-                audioJitterBufferDelaySeconds = n.doubleValue
-            }
-            if let n = audioNumberValue(statistic.values["jitterBufferEmittedCount"]) {
-                audioJitterBufferEmittedCount = n.doubleValue
-            }
-            if let n = audioNumberValue(statistic.values["packetsLost"]) {
-                audioPacketsLost = n.intValue
-            }
-
-            break
-        }
-
-        let audioNow = Date().timeIntervalSince1970
-
-        guard let audioBytesReceived else {
-            await MainActor.run {
-                self.lastInboundAudioBytesReceived = nil
-                self.lastInboundAudioBytesTimestamp = nil
-                self.lastAudioJitterBufferDelaySeconds = nil
-                self.lastAudioJitterBufferEmittedCount = nil
-                self.inboundAudioKbps = nil
-                self.inboundAudioPlayoutDelayMs = nil
-                self.inboundAudioJitterMs = nil
-                self.inboundAudioPacketsLost = nil
-                self.audioIceCurrentRoundTripTimeMs = nil
-            }
-            return
-        }
-
-        var audioKbps: Int?
-        if let lastAudioBytes, let lastAudioTs {
-            let dt = audioNow - lastAudioTs
-            let db = Double(audioBytesReceived - lastAudioBytes)
-            if dt > 0, db >= 0 {
-                audioKbps = Int((db * 8.0 / dt) / 1000.0)
-            }
-        }
-
-        let audioJitterMs: Int?
-        if let audioJitterSeconds {
-            audioJitterMs = Int((audioJitterSeconds * 1000.0).rounded())
-        } else {
-            audioJitterMs = nil
-        }
-
-        let audioPlayoutDelayMs: Int? = {
-            guard let audioJitterBufferDelaySeconds,
-                  let audioJitterBufferEmittedCount,
-                  audioJitterBufferEmittedCount > 0 else {
-                return nil
-            }
-
-            if let lastDelay = lastAudioJitterBufferDelaySeconds,
-               let lastEmitted = lastAudioJitterBufferEmittedCount {
-                let dDelay = audioJitterBufferDelaySeconds - lastDelay
-                let dEmit = audioJitterBufferEmittedCount - lastEmitted
-                if dDelay >= 0, dEmit > 0 {
-                    return Int(((dDelay / dEmit) * 1000.0).rounded())
-                }
-            }
-
-            return Int(((audioJitterBufferDelaySeconds / audioJitterBufferEmittedCount) * 1000.0).rounded())
-        }()
-
-        let audioRttMs: Int?
-        if let audioCurrentRoundTripTimeSeconds {
-            audioRttMs = Int((audioCurrentRoundTripTimeSeconds * 1000.0).rounded())
-        } else {
-            audioRttMs = nil
-        }
-
-        await MainActor.run {
-            self.lastInboundAudioBytesReceived = audioBytesReceived
-            self.lastInboundAudioBytesTimestamp = audioNow
-            self.lastAudioJitterBufferDelaySeconds = audioJitterBufferDelaySeconds
-            self.lastAudioJitterBufferEmittedCount = audioJitterBufferEmittedCount
-            self.inboundAudioKbps = audioKbps
-            self.inboundAudioPlayoutDelayMs = audioPlayoutDelayMs
-            self.inboundAudioJitterMs = audioJitterMs
-            self.inboundAudioPacketsLost = audioPacketsLost
-            self.audioIceCurrentRoundTripTimeMs = audioRttMs
-        }
-    }
-    
-    private func measureLatency() async {
-        latencyMeasurementStart = Date()
-        
-        // Send ping message through data channel
-        let pingMessage: [String: Any] = ["type": "ping", "timestamp": Date().timeIntervalSince1970]
-        
-        guard let data = try? JSONSerialization.data(withJSONObject: pingMessage) else {
-            return
-        }
-        
-        let buffer = RTCDataBuffer(data: data, isBinary: true)
-        dataChannel?.sendData(buffer)
-    }
-    
-    func sendInputEvent(_ event: InputEvent) {
-        guard let data = try? JSONEncoder().encode(event),
-              let dataChannel = dataChannel,
-              dataChannel.readyState == .open else {
-            return
-        }
-        
-        let buffer = RTCDataBuffer(data: data, isBinary: true)
-        dataChannel.sendData(buffer)
-    }
-    
     func disconnect() {
-        connectionTimer?.invalidate()
-        connectionTimer = nil
-
-        streamHealthTimer?.invalidate()
-        streamHealthTimer = nil
-
         janusKeepAliveTimer?.invalidate()
         janusKeepAliveTimer = nil
         janusSessionId = nil
         janusHandleId = nil
-        janusAudioHandleId = nil
+
         let waiters = janusWaiters
         janusWaiters.removeAll()
         for (_, waiter) in waiters {
             waiter.resume(throwing: WebRTCError.signalingConnectionLost)
         }
-        
+
         webSocketTask?.cancel()
         webSocketTask = nil
-        
-        dataChannel?.close()
-        dataChannel = nil
-        
+
         peerConnection?.close()
         peerConnection = nil
 
-        audioPeerConnection?.close()
-        audioPeerConnection = nil
-
-        localAudioSender = nil
-        localAudioTrack = nil
-        
         videoView = nil
         isConnected = false
         isConnecting = false
         hasEverConnectedToStream = false
         isStreamStalled = false
         lastDisconnectReason = nil
-        lastVideoFrameAgeSeconds = nil
-        setLastVideoFrameTime(nil)
-        connectedIceTime = nil
-        latency = 0
         videoSize = nil
-        isFrameCaptureEnabled = false
-        inboundVideoKbps = nil
-        inboundFps = nil
-        inboundVideoPlayoutDelayMs = nil
-        inboundVideoJitterMs = nil
-        inboundVideoDecodeMs = nil
-        inboundVideoPacketsLost = nil
-        iceCurrentRoundTripTimeMs = nil
-        inboundAudioKbps = nil
-        inboundAudioPlayoutDelayMs = nil
-        inboundAudioJitterMs = nil
-        inboundAudioPacketsLost = nil
-        audioIceCurrentRoundTripTimeMs = nil
-        lastInboundVideoBytesReceived = nil
-        lastInboundVideoBytesTimestamp = nil
-        lastInboundAudioBytesReceived = nil
-        lastInboundAudioBytesTimestamp = nil
-        lastAudioJitterBufferDelaySeconds = nil
-        lastAudioJitterBufferEmittedCount = nil
-        fpsWindowStartTime = 0
-        fpsFrameCount = 0
-        lastFpsPublishTime = 0
-    }
-
-    private func ensureMicrophoneAccess() async -> Bool {
-#if canImport(AVFoundation)
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            return true
-        case .notDetermined:
-            return await withCheckedContinuation { continuation in
-                AVCaptureDevice.requestAccess(for: .audio) { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-        default:
-            return false
-        }
-#else
-        return false
-#endif
-    }
-
-    private func setupLocalMicrophoneTrackIfNeeded(factory: RTCPeerConnectionFactory, peerConnection: RTCPeerConnection?) {
-        guard localAudioTrack == nil else { return }
-        guard let peerConnection else { return }
-
-        let audioSource = factory.audioSource(with: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
-        let audioTrack = factory.audioTrack(with: audioSource, trackId: "audio0")
-        localAudioTrack = audioTrack
-        localAudioSender = peerConnection.add(audioTrack, streamIds: ["stream0"])
     }
 }
 
-// MARK: - RTCPeerConnectionDelegate
 extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-        Task { @MainActor in
-            print("Signaling state changed: \(stateChanged)")
-        }
-    }
-    
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-        Task { @MainActor in
-            print("Media stream added")
-        }
-    }
-    
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
-        Task { @MainActor in
-            print("Media stream removed")
-        }
-    }
-    
-    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        Task { @MainActor in
-            print("Should negotiate")
-        }
-    }
-    
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
+    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
+
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCIceConnectionState) {
         Task { @MainActor in
-            // Drive UI connection state from the video peer connection only.
-            // Audio may connect/disconnect independently when split into a separate PeerConnection.
-            guard peerConnection === self.peerConnection else {
-                print("(audio) ICE connection state changed: \(stateChanged)")
-                return
-            }
-
             isConnected = (stateChanged == .connected || stateChanged == .completed)
             if isConnected {
                 isConnecting = false
                 hasEverConnectedToStream = true
-                connectedIceTime = CACurrentMediaTime()
                 lastDisconnectReason = nil
             } else {
                 if stateChanged == .disconnected {
                     lastDisconnectReason = "Video connection lost"
-                    isConnecting = false
                 } else if stateChanged == .failed {
                     lastDisconnectReason = "Video connection failed"
-                    isConnecting = false
                 } else if stateChanged == .closed {
                     lastDisconnectReason = "Video connection closed"
-                    isConnecting = false
                 }
+                isConnecting = false
             }
-            print("ICE connection state changed: \(stateChanged)")
         }
     }
-    
+
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCIceGatheringState) {
         Task { @MainActor in
-            print("ICE gathering state changed: \(stateChanged)")
-
-            if stateChanged == .complete {
-                do {
-                    if peerConnection === self.audioPeerConnection {
-                        if let handleId = self.janusAudioHandleId {
-                            try await sendJanusTrickleCompleted(handleId: handleId)
-                        }
-                    } else {
-                        if let handleId = self.janusHandleId {
-                            try await sendJanusTrickleCompleted(handleId: handleId)
-                        }
-                    }
-                } catch {
-                    // ignore
-                }
+            if stateChanged == .complete, let handleId = self.janusHandleId {
+                try? await sendJanusTrickleCompleted(handleId: handleId)
             }
         }
     }
-    
+
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         Task { @MainActor in
-            do {
-                if peerConnection === self.audioPeerConnection {
-                    if let handleId = self.janusAudioHandleId {
-                        try await sendJanusTrickleCandidate(candidate, handleId: handleId)
-                    }
-                } else {
-                    if let handleId = self.janusHandleId {
-                        try await sendJanusTrickleCandidate(candidate, handleId: handleId)
-                    }
-                }
-            } catch {
-                print("Failed to send Janus ICE candidate: \(error)")
+            if let handleId = self.janusHandleId {
+                try? await sendJanusTrickleCandidate(candidate, handleId: handleId)
             }
         }
     }
-    
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
-        Task { @MainActor in
-            print("ICE candidates removed")
-        }
-    }
-    
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
-        Task { @MainActor in
-            print("Data channel opened")
-        }
-    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {
-        applyPlayoutDelayHintIfPossible()
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         videoTrack = track
         if let videoView {
@@ -1259,86 +473,11 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
     }
 }
 
-// MARK: - RTCDataChannelDelegate
-extension WebRTCManager: @preconcurrency RTCDataChannelDelegate {
-    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-        Task { @MainActor in
-            print("Data channel state changed: \(dataChannel.readyState)")
-        }
-    }
-    
-    func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-        guard buffer.isBinary,
-              let message = try? JSONDecoder().decode(InputMessage.self, from: buffer.data) else {
-            return
-        }
-        
-        Task { @MainActor in
-            await handleDataChannelMessage(message)
-        }
-    }
-    
-    private func handleDataChannelMessage(_ message: InputMessage) async {
-        switch message.type {
-        case "pong":
-            if let startTime = latencyMeasurementStart {
-                latency = Int(Date().timeIntervalSince(startTime) * 1000)
-                latencyMeasurementStart = nil
-            }
-        case "video-frame":
-            // Handle video frame metadata if needed
-            break
-        default:
-            break
-        }
-    }
- }
-
-// MARK: - RTCVideoRenderer
 extension WebRTCManager: @preconcurrency RTCVideoRenderer {
     func renderFrame(_ frame: RTCVideoFrame?) {
-        guard let frame else { return }
-
-        let now = CACurrentMediaTime()
-
-        setLastVideoFrameTime(now)
-
-        if fpsWindowStartTime == 0 {
-            fpsWindowStartTime = now
-            lastFpsPublishTime = now
-        }
-
-        fpsFrameCount += 1
-
-        if now - lastFpsPublishTime >= 0.5 {
-            let dt = now - fpsWindowStartTime
-            if dt > 0 {
-                let fps = Double(fpsFrameCount) / dt
-                Task { @MainActor in
-                    inboundFps = fps
-                }
-            }
-            fpsWindowStartTime = now
-            fpsFrameCount = 0
-            lastFpsPublishTime = now
-        }
-
-        guard isFrameCaptureEnabled else { return }
-
-        let minInterval: CFTimeInterval = 1.0 / 12.0
-        if now - lastFrameCaptureTime < minInterval {
-            return
-        }
-        lastFrameCaptureTime = now
-
-        if let cvBuffer = frame.buffer as? RTCCVPixelBuffer {
-            let pb = cvBuffer.pixelBuffer
-            Task { @MainActor in
-                currentFrame = pb
-            }
-        }
+        _ = frame
     }
-    
+
     func setSize(_ size: CGSize) {
         Task { @MainActor in
             if size.width > 0, size.height > 0 {
@@ -1348,17 +487,10 @@ extension WebRTCManager: @preconcurrency RTCVideoRenderer {
     }
 }
 
-// MARK: - Supporting Types
 enum WebRTCError: Error {
     case factoryNotInitialized
     case invalidSignalingURL
     case signalingConnectionLost
-    case peerConnectionFailed
-}
-
-struct InputMessage: Codable {
-    let type: String
-    let timestamp: TimeInterval?
 }
 
 #else
@@ -1370,32 +502,25 @@ final class WebRTCManager: NSObject, ObservableObject {
     @Published var hasEverConnectedToStream = false
     @Published var isStreamStalled = false
     @Published var lastDisconnectReason: String?
-    @Published var lastVideoFrameAgeSeconds: Int?
-    @Published var latency: Int = 0
-    @Published var currentFrame: CVPixelBuffer?
-    @Published var audioEnabled = false
-    @Published var micEnabled = false
-    
+    @Published var videoSize: CGSize?
+
     func connect(to device: KVMDevice) async throws {
+        _ = device
         isConnected = false
     }
 
     func reconnect(to device: KVMDevice) async {
+        _ = device
         disconnect()
     }
-    
-    func sendInputEvent(_ event: InputEvent) {
-    }
-    
+
     func disconnect() {
         isConnected = false
         isConnecting = false
         hasEverConnectedToStream = false
         isStreamStalled = false
         lastDisconnectReason = nil
-        lastVideoFrameAgeSeconds = nil
-        latency = 0
-        currentFrame = nil
+        videoSize = nil
     }
 }
 
