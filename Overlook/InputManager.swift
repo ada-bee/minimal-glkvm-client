@@ -4,10 +4,6 @@ import CoreGraphics
 import Combine
 import SwiftUI
 
-extension Notification.Name {
-    static let overlookToggleCopyMode = Notification.Name("overlook.toggleCopyMode")
-}
-
 @MainActor
 class InputManager: ObservableObject {
     private var webRTCManager: WebRTCManager?
@@ -29,7 +25,6 @@ class InputManager: ObservableObject {
     private var pendingCommandKeyCode: UInt16?
     private var activeCommandKeyCode: UInt16?
     private var commandKeySentToRemote: Bool = false
-    private var suppressedKeyUps: Set<UInt16> = []
     
     @Published var isKeyboardCaptureEnabled = false
     @Published var isMouseCaptureEnabled = false
@@ -205,25 +200,7 @@ class InputManager: ObservableObject {
             let isKeyDown = event.type == .keyDown
             let modifiers = event.modifierFlags
 
-            if !isKeyDown, suppressedKeyUps.contains(keyCode) {
-                suppressedKeyUps.remove(keyCode)
-                return
-            }
-
             if isKeyDown, modifiers.contains(.command) {
-                if keyCode == 8 {
-                    prepareForLocalCommandShortcut()
-                    suppressedKeyUps.insert(keyCode)
-                    NotificationCenter.default.post(name: .overlookToggleCopyMode, object: nil)
-                    return
-                }
-                if keyCode == 9 {
-                    prepareForLocalCommandShortcut()
-                    suppressedKeyUps.insert(keyCode)
-                    pasteClipboardToRemote()
-                    return
-                }
-
                 if let pending = pendingCommandKeyCode,
                    commandKeySentToRemote == false,
                    transportMode == .glkvmWebSocket,
@@ -306,22 +283,6 @@ class InputManager: ObservableObject {
         }
     }
 
-    private func prepareForLocalCommandShortcut() {
-        if commandKeySentToRemote,
-           transportMode == .glkvmWebSocket,
-           let ws = glkvmWebSocketClient,
-           let code = activeCommandKeyCode,
-           let metaKey = glkvmKeyForMacKeyCode(code) {
-            Task {
-                try? await ws.sendHidKey(key: metaKey, state: false)
-            }
-        }
-
-        pendingCommandKeyCode = activeCommandKeyCode ?? pendingCommandKeyCode
-        activeCommandKeyCode = nil
-        commandKeySentToRemote = false
-    }
-
     private func clearPendingCommandKey() {
         pendingCommandKeyCode = nil
         activeCommandKeyCode = nil
@@ -343,21 +304,6 @@ class InputManager: ObservableObject {
         sendKeyEvent(keyEvent)
     }
 
-    private func pasteClipboardToRemote() {
-        guard let client = glkvmClient else { return }
-        guard let text = NSPasteboard.general.string(forType: .string) else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        Task {
-            do {
-                try await client.hidPrint(text: trimmed)
-            } catch {
-                print("Paste to remote failed: \(error)")
-            }
-        }
-    }
-    
     private func handleMouseEvent(_ event: NSEvent) {
         guard isMouseCaptureEnabled else { return }
         

@@ -5,15 +5,11 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject var webRTCManager: WebRTCManager
     @EnvironmentObject var inputManager: InputManager
-    @EnvironmentObject var ocrManager: OCRManager
     @EnvironmentObject var kvmDeviceManager: KVMDeviceManager
     
     @State private var selectedDevice: KVMDevice?
     @State private var isConnected = false
-    @State private var isOCRModeEnabled = false
-    @State private var isShowingOCRResult = false
     @State private var showingSettings = false
-    @State private var selectedText = ""
 
     @State private var showingManualConnect = false
     @State private var manualHostPort = ""
@@ -113,9 +109,6 @@ struct ContentView: View {
         ZStack(alignment: .trailing) {
             if isFullscreen {
                 VideoSurfaceView(
-                    isOCRModeEnabled: $isOCRModeEnabled,
-                    selectedText: $selectedText,
-                    isShowingOCRResult: $isShowingOCRResult,
                     onReconnect: {
                         guard let device = kvmDeviceManager.connectedDevice else { return }
                         Task { @MainActor in
@@ -127,9 +120,6 @@ struct ContentView: View {
                 .allowsHitTesting(!showingSettings)
             } else {
                 VideoSurfaceView(
-                    isOCRModeEnabled: $isOCRModeEnabled,
-                    selectedText: $selectedText,
-                    isShowingOCRResult: $isShowingOCRResult,
                     onReconnect: {
                         guard let device = kvmDeviceManager.connectedDevice else { return }
                         Task { @MainActor in
@@ -177,12 +167,6 @@ struct ContentView: View {
                             .disabled(webRTCManager.videoSize == nil)
                             .help("Fit window to guest")
 
-                            Button(action: { toggleOCR() }) {
-                                Image(systemName: isOCRModeEnabled ? "text.viewfinder" : "doc.text")
-                            }
-                            .disabled(!isConnected)
-                            .help(isOCRModeEnabled ? "Disable OCR Selection" : "Enable OCR Selection")
-
                             Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showingSettings.toggle() } }) {
                                 Image(systemName: "gearshape")
                             }
@@ -226,7 +210,6 @@ struct ContentView: View {
                 ConnectionsPopoverView(
                     selectedDevice: $selectedDevice,
                     isConnected: isConnected,
-                    isScanning: kvmDeviceManager.isScanning,
                     devices: kvmDeviceManager.availableDevices,
                     connectedDeviceName: kvmDeviceManager.connectedDevice?.name,
                     latency: webRTCManager.latency,
@@ -243,9 +226,6 @@ struct ContentView: View {
                     inboundAudioJitterMs: webRTCManager.inboundAudioJitterMs,
                     inboundAudioPacketsLost: webRTCManager.inboundAudioPacketsLost,
                     audioIceCurrentRoundTripTimeMs: webRTCManager.audioIceCurrentRoundTripTimeMs,
-                    onScan: {
-                        kvmDeviceManager.scanForDevices()
-                    },
                     onManualConnect: {
                         showingManualConnect = true
                     },
@@ -325,16 +305,8 @@ struct ContentView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .overlookToggleCopyMode)) { _ in
-            Task { @MainActor in
-                isOCRModeEnabled.toggle()
-            }
-        }
         .onChange(of: appAppearance) { _, _ in
             applyAppAppearance()
-        }
-        .sheet(isPresented: $isShowingOCRResult) {
-            OCRResultView(selectedText: $selectedText)
         }
         .sheet(isPresented: $showingManualConnect) {
             ManualConnectSheet(
@@ -377,12 +349,6 @@ struct ContentView: View {
                     }
                     .disabled(webRTCManager.videoSize == nil)
                     .help("Fit window to guest")
-
-                    Button(action: { toggleOCR() }) {
-                        Image(systemName: isOCRModeEnabled ? "text.viewfinder" : "doc.text")
-                    }
-                    .disabled(!isConnected)
-                    .help(isOCRModeEnabled ? "Disable OCR Selection" : "Enable OCR Selection")
 
                     Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showingSettings.toggle() } }) {
                         Image(systemName: "gearshape")
@@ -492,11 +458,6 @@ struct ContentView: View {
         }
     }
     
-    @MainActor
-    private func toggleOCR() {
-        isOCRModeEnabled.toggle()
-    }
-
     @MainActor
     private func fitWindowToGuest() {
         guard let videoSize = webRTCManager.videoSize,
@@ -830,7 +791,6 @@ struct ConnectionsPopoverView: View {
     @Binding var selectedDevice: KVMDevice?
 
     let isConnected: Bool
-    let isScanning: Bool
     let devices: [KVMDevice]
     let connectedDeviceName: String?
     let latency: Int
@@ -850,7 +810,6 @@ struct ConnectionsPopoverView: View {
     let inboundAudioPacketsLost: Int?
     let audioIceCurrentRoundTripTimeMs: Int?
 
-    let onScan: () -> Void
     let onManualConnect: () -> Void
     let onToggleConnection: () -> Void
     let onForgetSelectedDevice: () -> Void
@@ -896,20 +855,12 @@ struct ConnectionsPopoverView: View {
             .frame(maxWidth: .infinity)
 
             HStack {
-                Button("Scan") { onScan() }
-                    .disabled(isScanning)
-
                 Button("Manual Connect…") { onManualConnect() }
 
                 Button("Forget") { onForgetSelectedDevice() }
                     .disabled(isConnected || selectedDevice?.id.hasPrefix("saved-") != true)
 
                 Spacer()
-
-                if isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
             }
 
             Divider()
@@ -1046,6 +997,5 @@ struct ConnectionsPopoverView: View {
     ContentView()
         .environmentObject(WebRTCManager())
         .environmentObject(InputManager())
-        .environmentObject(OCRManager())
         .environmentObject(KVMDeviceManager())
 }

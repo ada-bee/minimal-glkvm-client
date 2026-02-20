@@ -599,28 +599,6 @@ extension GLKVMClient {
         return response.result
     }
 
-    func hidPrint(text: String, keymap: String? = nil, limit: Int? = nil, slow: Bool? = nil) async throws {
-        var query: [URLQueryItem] = []
-        if let keymap {
-            query.append(URLQueryItem(name: "keymap", value: keymap))
-        }
-        if let limit {
-            query.append(URLQueryItem(name: "limit", value: String(limit)))
-        }
-        if let slow {
-            query.append(URLQueryItem(name: "slow", value: slow ? "true" : "false"))
-        }
-        let body = text.data(using: .utf8) ?? Data()
-        _ = try await request(
-            method: "POST",
-            path: "api/hid/print",
-            query: query,
-            body: body,
-            contentType: "text/plain; charset=utf-8",
-            responseType: GLKVMResponse<GLKVMEmptyResult>.self
-        )
-    }
-
     func sendHidShortcut(keys: [String]) async throws {
         _ = try await request(
             method: "POST",

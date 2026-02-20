@@ -1,6 +1,11 @@
 ## User settings
 xcuserdata/
 .VSCodeCounter/
+*.xcuserstate
+
+# editor settings
+.idea/
+.vscode/
 
 ## Obj-C/Swift specific
 *.hmap
@@ -31,4 +36,8 @@ janus/
 # hence it is not needed unless you have added a package configuration file to your project
 # .swiftpm
 .build/
+DerivedData/
+build/
 
+# local OpenCode state
+.opencode/
