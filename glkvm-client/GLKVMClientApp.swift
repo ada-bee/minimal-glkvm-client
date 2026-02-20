@@ -16,7 +16,7 @@ struct GLKVMClientApp: App {
                 .environmentObject(appDelegate.kvmDeviceManager)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.automatic)
+        .windowResizability(.contentSize)
     }
 }
 
@@ -75,7 +75,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         var mask = window.styleMask
         mask.remove([.titled, .closable, .miniaturizable])
-        mask.insert([.resizable, .fullSizeContentView])
+        mask.remove(.resizable)
+        mask.insert(.fullSizeContentView)
         window.styleMask = mask
 
         window.title = ""

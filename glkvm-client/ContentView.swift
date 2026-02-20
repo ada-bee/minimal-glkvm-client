@@ -1,6 +1,11 @@
 import SwiftUI
 import AppKit
 
+private enum WindowSizingMode {
+    case matchStream(fallback: CGSize)
+    case fixed(size: CGSize)
+}
+
 struct ContentView: View {
     @EnvironmentObject var webRTCManager: WebRTCManager
     @EnvironmentObject var inputManager: InputManager
@@ -18,13 +23,17 @@ struct ContentView: View {
         return "GLKVM Client - \(state)"
     }
 
+    private let windowSizingMode: WindowSizingMode = .matchStream(
+        fallback: CGSize(width: 1920, height: 1080)
+    )
+
     var body: some View {
         VideoSurfaceView(
             onReconnect: {
                 Task { await reconnect() }
             }
         )
-        .background(WindowAspectRatioSetter(videoSize: webRTCManager.videoSize))
+        .background(WindowSizingSetter(videoSize: webRTCManager.videoSize, mode: windowSizingMode))
         .background(WindowChromeSetter())
         .background(WindowTitleSetter(title: windowTitle))
         .onAppear {
@@ -112,8 +121,17 @@ private struct WindowChromeSetter: NSViewRepresentable {
     }
 }
 
-private struct WindowAspectRatioSetter: NSViewRepresentable {
+private struct WindowSizingSetter: NSViewRepresentable {
     let videoSize: CGSize?
+    let mode: WindowSizingMode
+
+    final class Coordinator {
+        var lastAppliedContentSize: NSSize?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> NSView {
         NSView(frame: .zero)
@@ -121,8 +139,43 @@ private struct WindowAspectRatioSetter: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let window = nsView.window else { return }
-        guard let videoSize, videoSize.width > 0, videoSize.height > 0 else { return }
-        window.aspectRatio = NSSize(width: videoSize.width, height: videoSize.height)
+        guard let resolvedSize = resolvedWindowSize(for: videoSize),
+              resolvedSize.width > 0,
+              resolvedSize.height > 0 else {
+            return
+        }
+
+        let contentSize = NSSize(width: resolvedSize.width, height: resolvedSize.height)
+        if context.coordinator.lastAppliedContentSize != contentSize {
+            window.setContentSize(contentSize)
+            context.coordinator.lastAppliedContentSize = contentSize
+        }
+
+        if window.contentMinSize != contentSize {
+            window.contentMinSize = contentSize
+        }
+
+        if window.contentMaxSize != contentSize {
+            window.contentMaxSize = contentSize
+        }
+
+        if window.aspectRatio != contentSize {
+            window.aspectRatio = contentSize
+        }
+    }
+
+    private func resolvedWindowSize(for streamSize: CGSize?) -> CGSize? {
+        switch mode {
+        case .matchStream(let fallback):
+            if let streamSize,
+               streamSize.width > 0,
+               streamSize.height > 0 {
+                return streamSize
+            }
+            return fallback
+        case .fixed(let size):
+            return size
+        }
     }
 }
 
