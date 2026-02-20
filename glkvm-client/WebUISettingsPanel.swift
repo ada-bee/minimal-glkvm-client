@@ -8,7 +8,7 @@ struct WebUISettingsPanel: View {
 
     @Binding var isPresented: Bool
 
-    @AppStorage("overlook.appAppearance") private var appAppearance: String = "system"
+    @AppStorage("glkvm-client.appAppearance") private var appAppearance: String = "system"
 
     @State private var config: GLKVMSystemConfig?
     @State private var keymaps: GLKVMHidKeymapsState?

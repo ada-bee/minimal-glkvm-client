@@ -121,7 +121,7 @@ class WebRTCManager: NSObject, ObservableObject {
     private var fpsFrameCount: Int = 0
     private var lastFpsPublishTime: CFTimeInterval = 0
 
-    private let streamHealthQueue = DispatchQueue(label: "com.overlook.stream-health")
+    private let streamHealthQueue = DispatchQueue(label: "com.glkvm-client.stream-health")
     private var lastVideoFrameTime: CFTimeInterval?
     private var connectedIceTime: CFTimeInterval?
     private var streamHealthTimer: Timer?

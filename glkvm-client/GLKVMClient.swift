@@ -337,7 +337,7 @@ final class GLKVMClient {
     }
 
     func authLogin(user: String = "admin", password: String) async throws -> String {
-        let boundary = "----OverlookBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        let boundary = "----GLKVMClientBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
 
         var body = Data()
         body.append("--\(boundary)\r\n".data(using: .utf8) ?? Data())

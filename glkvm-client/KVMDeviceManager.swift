@@ -8,7 +8,7 @@ final class KVMDeviceManager: NSObject, ObservableObject {
     @Published var connectedDevice: KVMDevice?
     @Published var glkvmClient: GLKVMClient?
     
-    private static let savedDevicesKey = "overlook.saved_devices.v1"
+    private static let savedDevicesKey = "glkvm-client.saved_devices.v1"
 
     private struct PersistedDevice: Codable, Hashable {
         let host: String
@@ -199,7 +199,7 @@ final class KVMDeviceManager: NSObject, ObservableObject {
             var value: Bool = false
         }
 
-        let queue = DispatchQueue(label: "com.overlook.validate")
+        let queue = DispatchQueue(label: "com.glkvm-client.validate")
         let connection = NWConnection(host: NWEndpoint.Host(device.host), port: port, using: .tcp)
 
         return await withCheckedContinuation { continuation in

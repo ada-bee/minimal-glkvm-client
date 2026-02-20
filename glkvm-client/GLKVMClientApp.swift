@@ -4,7 +4,7 @@ import WebRTC
 #endif
 
 @main
-struct OverlookApp: App {
+struct GLKVMClientApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {

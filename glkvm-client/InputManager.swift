@@ -845,7 +845,7 @@ extension InputManager {
     func showAccessibilityPermissionDialog() {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permissions Required"
-        alert.informativeText = "Overlook needs accessibility permissions to capture keyboard and mouse input for remote control. Please grant permissions in System Preferences > Security & Privacy > Privacy > Accessibility."
+        alert.informativeText = "GLKVM Client needs accessibility permissions to capture keyboard and mouse input for remote control. Please grant permissions in System Preferences > Security & Privacy > Privacy > Accessibility."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Preferences")
         alert.addButton(withTitle: "Cancel")

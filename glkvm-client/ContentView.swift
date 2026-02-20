@@ -36,7 +36,7 @@ struct ContentView: View {
     @State private var showFullscreenControls: Bool = false
     @State private var fullscreenHoverTask: Task<Void, Never>?
 
-    @AppStorage("overlook.appAppearance") private var appAppearance: String = "system"
+    @AppStorage("glkvm-client.appAppearance") private var appAppearance: String = "system"
 
     private var preferredColorScheme: ColorScheme? {
         switch appAppearance {
@@ -60,7 +60,7 @@ struct ContentView: View {
                 deviceLabel = device.type.displayName
             }
         } else {
-            deviceLabel = "Overlook"
+            deviceLabel = "GLKVM Client"
         }
 
         let connectionState: String
@@ -91,7 +91,7 @@ struct ContentView: View {
             fps = "— fps dynamic"
         }
 
-        return "Overlook - \(deviceLabel) / \(connectionState) / \(resolution) / \(kbps) / \(fps)"
+        return "GLKVM Client - \(deviceLabel) / \(connectionState) / \(resolution) / \(kbps) / \(fps)"
     }
 
     private func applyAppAppearance() {

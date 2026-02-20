@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		01000001 /* OverlookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000001 /* OverlookApp.swift */; };
+		01000001 /* GLKVMClientApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000001 /* GLKVMClientApp.swift */; };
 		01000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000002 /* ContentView.swift */; };
 		01000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 02000003 /* Assets.xcassets */; };
 		01000006 /* WebRTCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000006 /* WebRTCManager.swift */; };
@@ -23,10 +23,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		02000001 /* OverlookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlookApp.swift; sourceTree = "<group>"; };
+		02000001 /* GLKVMClientApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GLKVMClientApp.swift; sourceTree = "<group>"; };
 		02000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		02000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		02000005 /* Overlook.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Overlook.entitlements; sourceTree = "<group>"; };
+		02000005 /* GLKVMClient.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GLKVMClient.entitlements; sourceTree = "<group>"; };
 		02000006 /* WebRTCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebRTCManager.swift; sourceTree = "<group>"; };
 		02000007 /* InputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputManager.swift; sourceTree = "<group>"; };
 		02000009 /* KVMDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KVMDeviceManager.swift; sourceTree = "<group>"; };
@@ -35,10 +35,10 @@
 		02000016 /* WebUISettingsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebUISettingsPanel.swift; sourceTree = "<group>"; };
 		02000018 /* ConnectSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectSheets.swift; sourceTree = "<group>"; };
 		0200001A /* VideoSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSurfaceView.swift; sourceTree = "<group>"; };
-		0200001F /* Overlook-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Overlook-Bridging-Header.h"; sourceTree = "<group>"; };
+		0200001F /* GLKVMClient-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GLKVMClient-Bridging-Header.h"; sourceTree = "<group>"; };
 		02000020 /* WebRTCFactoryBuilder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WebRTCFactoryBuilder.h; sourceTree = "<group>"; };
 		02000021 /* WebRTCFactoryBuilder.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WebRTCFactoryBuilder.m; sourceTree = "<group>"; };
-		03000001 /* Overlook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Overlook.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		03000001 /* minimal-glkvm-client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "minimal-glkvm-client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,15 +56,15 @@
 		05000001 = {
 			isa = PBXGroup;
 			children = (
-				05000002 /* Overlook */,
+				05000002 /* glkvm-client */,
 				05000003 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		05000002 /* Overlook */ = {
+		05000002 /* glkvm-client */ = {
 			isa = PBXGroup;
 			children = (
-				02000001 /* OverlookApp.swift */,
+				02000001 /* GLKVMClientApp.swift */,
 				02000002 /* ContentView.swift */,
 				0200001A /* VideoSurfaceView.swift */,
 				02000018 /* ConnectSheets.swift */,
@@ -73,20 +73,20 @@
 				02000006 /* WebRTCManager.swift */,
 				02000021 /* WebRTCFactoryBuilder.m */,
 				02000020 /* WebRTCFactoryBuilder.h */,
-				0200001F /* Overlook-Bridging-Header.h */,
+				0200001F /* GLKVMClient-Bridging-Header.h */,
 				02000007 /* InputManager.swift */,
 				02000009 /* KVMDeviceManager.swift */,
 				02000011 /* JSONValue.swift */,
 				02000003 /* Assets.xcassets */,
-				02000005 /* Overlook.entitlements */,
+				02000005 /* GLKVMClient.entitlements */,
 			);
-			path = Overlook;
+			path = "glkvm-client";
 			sourceTree = "<group>";
 		};
 		05000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				03000001 /* Overlook.app */,
+				03000001 /* minimal-glkvm-client.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -94,9 +94,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		06000001 /* Overlook */ = {
+		06000001 /* minimal-glkvm-client */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 07000001 /* Build configuration list for PBXNativeTarget "Overlook" */;
+			buildConfigurationList = 07000001 /* Build configuration list for PBXNativeTarget "minimal-glkvm-client" */;
 			buildPhases = (
 				08000001 /* Sources */,
 				04000001 /* Frameworks */,
@@ -106,12 +106,12 @@
 			);
 			dependencies = (
 			);
-			name = Overlook;
+			name = "minimal-glkvm-client";
 			packageProductDependencies = (
 				14000001 /* WebRTC */,
 			);
-			productName = Overlook;
-			productReference = 03000001 /* Overlook.app */;
+			productName = "minimal-glkvm-client";
+			productReference = 03000001 /* minimal-glkvm-client.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -130,7 +130,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 11000001 /* Build configuration list for PBXProject "Overlook" */;
+			buildConfigurationList = 11000001 /* Build configuration list for PBXProject "minimal-glkvm-client" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -146,7 +146,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				06000001 /* Overlook */,
+				06000001 /* minimal-glkvm-client */,
 			);
 		};
 /* End PBXProject section */
@@ -167,7 +167,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				01000001 /* OverlookApp.swift in Sources */,
+				01000001 /* GLKVMClientApp.swift in Sources */,
 				01000002 /* ContentView.swift in Sources */,
 				0100001B /* VideoSurfaceView.swift in Sources */,
 				01000017 /* WebUISettingsPanel.swift in Sources */,
@@ -311,17 +311,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Overlook/Overlook.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "glkvm-client/GLKVMClient.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_ASSET_PATHS = "\"Overlook/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"glkvm-client/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Overlook needs microphone access to send audio to the remote device.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "GLKVM Client needs microphone access to send audio to the remote device.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -333,9 +333,9 @@
 					"-Xcc",
 					"-Wno-deprecated-declarations",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.overlook.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OBJC_BRIDGING_HEADER = Overlook/Overlook-Bridging-Header.h;
+				PRODUCT_BUNDLE_IDENTIFIER = com.glkvm.client;
+				PRODUCT_NAME = "minimal-glkvm-client";
+				SWIFT_OBJC_BRIDGING_HEADER = "glkvm-client/GLKVMClient-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -346,17 +346,17 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Overlook/Overlook.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "glkvm-client/GLKVMClient.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_ASSET_PATHS = "\"Overlook/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"glkvm-client/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Overlook needs microphone access to send audio to the remote device.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "GLKVM Client needs microphone access to send audio to the remote device.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -368,9 +368,9 @@
 					"-Xcc",
 					"-Wno-deprecated-declarations",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.overlook.app;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OBJC_BRIDGING_HEADER = Overlook/Overlook-Bridging-Header.h;
+				PRODUCT_BUNDLE_IDENTIFIER = com.glkvm.client;
+				PRODUCT_NAME = "minimal-glkvm-client";
+				SWIFT_OBJC_BRIDGING_HEADER = "glkvm-client/GLKVMClient-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -379,7 +379,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		07000001 /* Build configuration list for PBXNativeTarget "Overlook" */ = {
+		07000001 /* Build configuration list for PBXNativeTarget "minimal-glkvm-client" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				12000003 /* Debug */,
@@ -388,7 +388,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		11000001 /* Build configuration list for PBXProject "Overlook" */ = {
+		11000001 /* Build configuration list for PBXProject "minimal-glkvm-client" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				12000001 /* Debug */,
