@@ -41,3 +41,10 @@ build/
 
 # local OpenCode state
 .opencode/
+
+# local build-time config
+.env
+
+# generated app icon files
+glkvm-client/Assets.xcassets/AppIcon.appiconset/*
+!glkvm-client/Assets.xcassets/AppIcon.appiconset/Contents.json

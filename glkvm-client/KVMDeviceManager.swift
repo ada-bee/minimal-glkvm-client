@@ -32,18 +32,18 @@ final class KVMDeviceManager: ObservableObject {
     @Published private(set) var connectedDevice: KVMDevice?
     @Published private(set) var glkvmClient: GLKVMClient?
 
-    // Ultra-minimal profile: one static LAN device.
-    private static let staticHost = "192.168.20.90"
-    private static let staticPort = 443
+    private let config = AppBuildConfig.current
     private static let savedTokenKey = "glkvm-client.static-device.auth-token.v1"
 
-    let staticDevice = KVMDevice(
-        id: "static-lan-device",
-        name: "GLKVM",
-        host: staticHost,
-        port: staticPort,
-        authToken: ""
-    )
+    private var staticDevice: KVMDevice {
+        KVMDevice(
+            id: "static-lan-device",
+            name: config.appName,
+            host: config.host,
+            port: config.port,
+            authToken: ""
+        )
+    }
 
     @discardableResult
     func connect(password: String? = nil, user: String = "admin") async throws -> KVMDevice {
@@ -67,6 +67,10 @@ final class KVMDeviceManager: ObservableObject {
             } else {
                 throw KVMError.authenticationFailed
             }
+        }
+
+        if let edidHex = config.edidHex {
+            try await client.setEDIDHex(edidHex)
         }
 
         connectedDevice = device

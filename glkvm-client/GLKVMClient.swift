@@ -11,6 +11,11 @@ struct GLKVMAuthLoginResult: Decodable {
     let token: String
 }
 
+struct GLKVMStatusResult: Decodable {
+    let status: String?
+    let message: String?
+}
+
 final class GLKVMClient {
     enum ClientError: Error {
         case invalidBaseURL
@@ -161,6 +166,20 @@ final class GLKVMClient {
             body: Data(),
             contentType: "application/x-www-form-urlencoded",
             responseType: GLKVMResponse<GLKVMEmptyResult>.self
+        )
+    }
+
+    func setEDIDHex(_ edidHex: String) async throws {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "edid", value: edidHex)]
+        let body = components.percentEncodedQuery?.data(using: .utf8) ?? Data()
+
+        _ = try await request(
+            method: "POST",
+            path: "api/upgrade/edid",
+            body: body,
+            contentType: "application/x-www-form-urlencoded; charset=utf-8",
+            responseType: GLKVMResponse<GLKVMStatusResult>.self
         )
     }
 

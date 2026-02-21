@@ -11,6 +11,8 @@ struct ContentView: View {
     @EnvironmentObject var inputManager: InputManager
     @EnvironmentObject var kvmDeviceManager: KVMDeviceManager
 
+    private let config = AppBuildConfig.current
+
     @State private var isConnected = false
     @State private var showingPasswordPrompt = false
     @State private var password = ""
@@ -18,9 +20,9 @@ struct ContentView: View {
     private var windowTitle: String {
         let state = isConnected ? "Connected" : "Disconnected"
         if let size = webRTCManager.videoSize {
-            return "GLKVM Client - \(state) - \(Int(size.width))x\(Int(size.height))"
+            return "\(config.appName) - \(state) - \(Int(size.width))x\(Int(size.height))"
         }
-        return "GLKVM Client - \(state)"
+        return "\(config.appName) - \(state)"
     }
 
     private let windowSizingMode: WindowSizingMode = .matchStream(

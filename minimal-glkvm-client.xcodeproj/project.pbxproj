@@ -20,6 +20,7 @@
 		01000019 /* ConnectSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000018 /* ConnectSheets.swift */; };
 		0100001B /* VideoSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0200001A /* VideoSurfaceView.swift */; };
 		0100001F /* WebRTCFactoryBuilder.m in Sources */ = {isa = PBXBuildFile; fileRef = 02000021 /* WebRTCFactoryBuilder.m */; };
+		01000022 /* AppBuildConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000022 /* AppBuildConfig.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		0200001F /* GLKVMClient-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GLKVMClient-Bridging-Header.h"; sourceTree = "<group>"; };
 		02000020 /* WebRTCFactoryBuilder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WebRTCFactoryBuilder.h; sourceTree = "<group>"; };
 		02000021 /* WebRTCFactoryBuilder.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WebRTCFactoryBuilder.m; sourceTree = "<group>"; };
+		02000022 /* AppBuildConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppBuildConfig.swift; sourceTree = "<group>"; };
 		03000001 /* minimal-glkvm-client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "minimal-glkvm-client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -66,6 +68,7 @@
 			children = (
 				02000001 /* GLKVMClientApp.swift */,
 				02000002 /* ContentView.swift */,
+				02000022 /* AppBuildConfig.swift */,
 				0200001A /* VideoSurfaceView.swift */,
 				02000018 /* ConnectSheets.swift */,
 
@@ -98,6 +101,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 07000001 /* Build configuration list for PBXNativeTarget "minimal-glkvm-client" */;
 			buildPhases = (
+				0A000001 /* Prepare Build Assets */,
 				08000001 /* Sources */,
 				04000001 /* Frameworks */,
 				09000001 /* Resources */,
@@ -151,6 +155,40 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		0A000001 /* Prepare Build Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/prepare.sh",
+			);
+			name = "Prepare Build Assets";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_16x16.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_16x16@2x.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_32x32.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_32x32@2x.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_128x128.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_256x256.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_512x512.png",
+				"$(SRCROOT)/glkvm-client/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/BuildConfig.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/prepare.sh\"";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXResourcesBuildPhase section */
 		09000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
@@ -169,6 +207,7 @@
 			files = (
 				01000001 /* GLKVMClientApp.swift in Sources */,
 				01000002 /* ContentView.swift in Sources */,
+				01000022 /* AppBuildConfig.swift in Sources */,
 				0100001B /* VideoSurfaceView.swift in Sources */,
 
 				01000019 /* ConnectSheets.swift in Sources */,
@@ -320,7 +359,13 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				GLKVM_APP_ICON = __REQUIRED__;
+				GLKVM_APP_NAME = __REQUIRED__;
+				GLKVM_BUNDLE_ID = com.glkvm.client;
+				GLKVM_EDID_HEX = "";
+				GLKVM_HOST_URL = __REQUIRED__;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(GLKVM_APP_NAME)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "GLKVM Client needs microphone access to send audio to the remote device.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -333,8 +378,8 @@
 					"-Xcc",
 					"-Wno-deprecated-declarations",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.glkvm.client;
-				PRODUCT_NAME = "minimal-glkvm-client";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(GLKVM_BUNDLE_ID)";
+				PRODUCT_NAME = "$(GLKVM_APP_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "glkvm-client/GLKVMClient-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -355,7 +400,13 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				GLKVM_APP_ICON = __REQUIRED__;
+				GLKVM_APP_NAME = __REQUIRED__;
+				GLKVM_BUNDLE_ID = com.glkvm.client;
+				GLKVM_EDID_HEX = "";
+				GLKVM_HOST_URL = __REQUIRED__;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(GLKVM_APP_NAME)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "GLKVM Client needs microphone access to send audio to the remote device.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -368,8 +419,8 @@
 					"-Xcc",
 					"-Wno-deprecated-declarations",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.glkvm.client;
-				PRODUCT_NAME = "minimal-glkvm-client";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(GLKVM_BUNDLE_ID)";
+				PRODUCT_NAME = "$(GLKVM_APP_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "glkvm-client/GLKVMClient-Bridging-Header.h";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
