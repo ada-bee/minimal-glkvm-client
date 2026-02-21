@@ -104,16 +104,6 @@ final class WebRTCManager: NSObject, ObservableObject {
         }
     }
 
-    func reconnect(to device: KVMDevice) async {
-        disconnect()
-        do {
-            try await connect(to: device)
-        } catch {
-            isConnecting = false
-            lastDisconnectReason = "Reconnect failed"
-        }
-    }
-
     private func connectToSignalingServer(device: KVMDevice) async throws {
         guard let rawURL = URL(string: device.webRTCURL) else {
             throw WebRTCError.invalidSignalingURL
@@ -474,8 +464,7 @@ extension WebRTCManager: @preconcurrency RTCPeerConnectionDelegate {
 }
 
 extension WebRTCManager: @preconcurrency RTCVideoRenderer {
-    func renderFrame(_ frame: RTCVideoFrame?) {
-        _ = frame
+    func renderFrame(_: RTCVideoFrame?) {
     }
 
     func setSize(_ size: CGSize) {
@@ -504,14 +493,8 @@ final class WebRTCManager: NSObject, ObservableObject {
     @Published var lastDisconnectReason: String?
     @Published var videoSize: CGSize?
 
-    func connect(to device: KVMDevice) async throws {
-        _ = device
+    func connect(to _: KVMDevice) async throws {
         isConnected = false
-    }
-
-    func reconnect(to device: KVMDevice) async {
-        _ = device
-        disconnect()
     }
 
     func disconnect() {

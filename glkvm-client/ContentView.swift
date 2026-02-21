@@ -1,11 +1,6 @@
 import SwiftUI
 import AppKit
 
-private enum WindowSizingMode {
-    case matchStream(fallback: CGSize)
-    case fixed(size: CGSize)
-}
-
 struct ContentView: View {
     @EnvironmentObject var webRTCManager: WebRTCManager
     @EnvironmentObject var inputManager: InputManager
@@ -25,9 +20,7 @@ struct ContentView: View {
         return "\(config.appName) - \(state)"
     }
 
-    private let windowSizingMode: WindowSizingMode = .matchStream(
-        fallback: CGSize(width: 1920, height: 1080)
-    )
+    private let fallbackWindowSize = CGSize(width: 1920, height: 1080)
 
     var body: some View {
         VideoSurfaceView(
@@ -35,11 +28,10 @@ struct ContentView: View {
                 Task { await reconnect() }
             }
         )
-        .background(WindowSizingSetter(videoSize: webRTCManager.videoSize, mode: windowSizingMode))
+        .background(WindowSizingSetter(videoSize: webRTCManager.videoSize, fallbackSize: fallbackWindowSize))
         .background(WindowChromeSetter())
         .background(WindowTitleSetter(title: windowTitle))
         .onAppear {
-            inputManager.setup(with: webRTCManager)
             Task {
                 await connect(password: nil)
             }
@@ -125,7 +117,7 @@ private struct WindowChromeSetter: NSViewRepresentable {
 
 private struct WindowSizingSetter: NSViewRepresentable {
     let videoSize: CGSize?
-    let mode: WindowSizingMode
+    let fallbackSize: CGSize
 
     final class Coordinator {
         var lastAppliedContentSize: NSSize?
@@ -141,8 +133,8 @@ private struct WindowSizingSetter: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let window = nsView.window else { return }
-        guard let resolvedSize = resolvedWindowSize(for: videoSize),
-              resolvedSize.width > 0,
+        let resolvedSize = resolvedWindowSize(for: videoSize)
+        guard resolvedSize.width > 0,
               resolvedSize.height > 0 else {
             return
         }
@@ -166,18 +158,14 @@ private struct WindowSizingSetter: NSViewRepresentable {
         }
     }
 
-    private func resolvedWindowSize(for streamSize: CGSize?) -> CGSize? {
-        switch mode {
-        case .matchStream(let fallback):
-            if let streamSize,
-               streamSize.width > 0,
-               streamSize.height > 0 {
-                return streamSize
-            }
-            return fallback
-        case .fixed(let size):
-            return size
+    private func resolvedWindowSize(for streamSize: CGSize?) -> CGSize {
+        if let streamSize,
+           streamSize.width > 0,
+           streamSize.height > 0 {
+            return streamSize
         }
+
+        return fallbackSize
     }
 }
 

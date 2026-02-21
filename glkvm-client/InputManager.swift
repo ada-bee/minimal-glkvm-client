@@ -25,10 +25,6 @@ final class InputManager: ObservableObject {
     @Published var isKeyboardCaptureEnabled = false
     @Published var isMouseCaptureEnabled = false
 
-    func setup(with webRTCManager: WebRTCManager) {
-        _ = webRTCManager
-    }
-
     func setGLKVMClient(_ client: GLKVMClient?) {
         glkvmClient = client
         if client == nil {
@@ -178,7 +174,7 @@ final class InputManager: ObservableObject {
                     return
                 }
 
-                flushPendingCommandKeyIfNeeded(timestamp: event.timestamp, modifiers: modifiers)
+                flushPendingCommandKeyIfNeeded()
             }
 
             sendKeyEvent(keyCode: keyCode, isKeyDown: isKeyDown)
@@ -239,9 +235,7 @@ final class InputManager: ObservableObject {
         commandKeySentToRemote = false
     }
 
-    private func flushPendingCommandKeyIfNeeded(timestamp: TimeInterval, modifiers: NSEvent.ModifierFlags) {
-        _ = timestamp
-        _ = modifiers
+    private func flushPendingCommandKeyIfNeeded() {
         guard let pendingCommandKeyCode, commandKeySentToRemote == false else { return }
         activeCommandKeyCode = pendingCommandKeyCode
         self.pendingCommandKeyCode = nil

@@ -8,8 +8,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (RTCPeerConnectionFactory *)makeFactory;
 
-+ (void)setPlayoutDelayHintIfSupportedForReceiver:(RTCRtpReceiver *)receiver seconds:(double)seconds;
-
 @end
 
 NS_ASSUME_NONNULL_END

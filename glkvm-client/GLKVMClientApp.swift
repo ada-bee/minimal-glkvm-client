@@ -28,8 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var notificationObservers: [NSObjectProtocol] = []
     private var chromeEnforcerTask: Task<Void, Never>?
     
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        _ = notification
+    func applicationDidFinishLaunching(_: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
